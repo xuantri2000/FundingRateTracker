@@ -8,8 +8,8 @@
         <p class="text-slate-400">Đặt lệnh Long / Short đồng thời</p>
       </div>
 
-      <!-- Giao diện đặt lệnh -->
-      <div v-if="!isTrackingPnl" class="space-y-6">
+      <!-- Giao diện đặt lệnh (luôn hiển thị, nhưng có thể bị disable) -->
+      <div class="space-y-6">
         <!-- Symbol chung -->
         <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
           <label class="block text-slate-400 text-sm mb-2">Cặp giao dịch</label>
@@ -17,6 +17,7 @@
             v-model="symbol"
             placeholder="BTCUSDT"
             class="w-full bg-slate-700 text-white rounded-lg p-2 border border-slate-600 placeholder-slate-500"
+            :disabled="isTrackingPnl"
           />
         </div>
 
@@ -25,13 +26,13 @@
           <!-- Long Panel -->
           <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
             <h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
-            <TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges" />
+            <TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges" :disabled="isTrackingPnl" />
           </div>
 
           <!-- Short Panel -->
           <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
             <h2 class="text-xl text-red-400 font-semibold mb-4">Lệnh Short (SELL)</h2>
-            <TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges" />
+            <TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges" :disabled="isTrackingPnl" />
           </div>
         </div>
 
@@ -39,7 +40,7 @@
         <div class="flex justify-center">
           <button
             @click="placeOrders"
-            :disabled="isLoading"
+            :disabled="isLoading || isTrackingPnl"
             class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span v-if="isLoading">Đang xử lý...</span>
@@ -48,8 +49,8 @@
         </div>
       </div>
 
-      <!-- Giao diện theo dõi PNL -->
-      <div v-else class="space-y-6">
+      <!-- Giao diện theo dõi PNL (chỉ hiển thị khi isTrackingPnl là true) -->
+      <div v-if="isTrackingPnl" class="space-y-6">
         <div class="bg-slate-800/50 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-slate-700">
           <h2 class="text-2xl font-bold text-white mb-4">
             Theo dõi PNL cho <span class="text-yellow-400">{{ symbol }}</span>
@@ -65,7 +66,7 @@
               </thead>
               <tbody>
                 <tr v-for="pos in pnlData" :key="pos.exchange" class="border-b border-slate-700">
-                  <td class="p-3 font-medium text-white">{{ pos.exchange }}</td>
+                  <td class="p-3 font-medium text-white">{{ exchangeNameMap[pos.exchange] || pos.exchange }}</td>
                   <td class="p-3">
                     <span :class="pos.side === 'BUY' ? 'text-green-400' : 'text-red-400'">
                       {{ pos.side }}
@@ -104,6 +105,16 @@
                   class="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-xl shadow-lg shadow-yellow-500/30 font-semibold transition-all disabled:opacity-50 flex items-center gap-2">
             <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             <span>Đang săn PNL... (Dừng)</span>
+          </button>
+
+          <!-- Nút Buộc hủy lệnh -->
+          <button
+            @click="forceClosePositions"
+            :disabled="isLoading"
+            class="bg-red-800 hover:bg-red-900 text-white px-6 py-3 rounded-xl shadow-lg shadow-red-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span v-if="isLoading">Đang xử lý...</span>
+            <span v-else>🚨 Buộc hủy lệnh</span>
           </button>
 
           <!-- Nút Quay lại -->
@@ -163,6 +174,12 @@ onUnmounted(() => {
   if (pnlInterval) clearInterval(pnlInterval)
 })
 
+const exchangeNameMap = computed(() => {
+  const map = {};
+  exchanges.value.forEach(ex => { map[ex.key] = ex.name; });
+  return map;
+});
+
 const totalPnl = computed(() => {
   return pnlData.value.reduce((sum, pos) => sum + (pos.pnl || 0), 0)
 })
@@ -191,14 +208,36 @@ const startPnlTracking = (isHighFrequency = false) => {
       const newPnlData = data.results.map(r => r.data)
       pnlData.value = newPnlData
 
+      // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý
+      if (newPnlData.length < 2 || newPnlData.some(p => p.size === 0)) {
+        addToast('Phát hiện một vị thế đã bị đóng! Đang buộc hủy lệnh còn lại...', 'error');
+        console.error('🚨 Fail-safe triggered: Một vị thế đã biến mất. Đóng lệnh còn lại.');
+        // Dừng tất cả các vòng lặp
+        isAttemptingToClose.value = false;
+        if (pnlInterval) clearInterval(pnlInterval);
+        // Tìm vị thế còn lại và đóng nó
+        const remainingPositions = newPnlData.filter(p => p.size > 0).map(p => ({ exchange: p.exchange }));
+        if (remainingPositions.length > 0) {
+          // Gọi force-close cho các vị thế còn lại
+          await forceClosePositions(remainingPositions);
+        } else {
+          reset(); // Nếu không còn gì, chỉ reset UI
+        }
+        return; // Dừng xử lý tiếp
+      }
+
       // Nếu đang trong chế độ săn PNL, kiểm tra điều kiện đóng
+      // CẬP NHẬT LOGIC: Kiểm tra tổng PNL > 0
       if (isAttemptingToClose.value) {
-        const pnl1 = newPnlData[0]?.pnl ?? -1;
-        const pnl2 = newPnlData[1]?.pnl ?? -1;
-        if (pnl1 > 0 && pnl2 > 0) {
-          console.log("✅ Điều kiện PNL > 0 cho cả 2 lệnh đã đạt! Tự động đóng lệnh.");
-          addToast('Điều kiện PNL đạt! Tự động đóng lệnh.', 'success');
-          await closeHedgedPositions();
+        // Tính tổng PNL từ dữ liệu mới nhận được
+        const currentTotalPnl = newPnlData.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+
+        // Kiểm tra điều kiện: Tổng PNL > 0
+        if (currentTotalPnl > 0) {
+          console.log(`✅ Điều kiện tổng PNL > 0 đã đạt (${currentTotalPnl.toFixed(4)})! Tự động đóng lệnh.`);
+          // Không hiển thị toast ở đây nữa.
+          // Chỉ gọi hàm đóng lệnh, hàm này sẽ tự xử lý toast thành công/thất bại.
+          closeHedgedPositions();
         }
       }
     } catch (error) {
@@ -231,6 +270,9 @@ async function placeOrders() {
     const { data } = await axios.post('/api/order/multi', payload)
     const results = data.results || []
 
+    // Dọn dẹp mảng vị thế thành công trước khi xử lý kết quả mới
+    successfulPositions.value = [];
+
     let successCount = 0;
     results.forEach(r => {
       if (r.success) {
@@ -250,6 +292,8 @@ async function placeOrders() {
     if (successCount === 2) {
       isTrackingPnl.value = true
       startPnlTracking()
+    } else if (successCount === 1) {
+      await handlePartialOrderFailure();
     } else {
       // Nếu không thành công cả 2, reset lại
       successfulPositions.value = []
@@ -261,6 +305,26 @@ async function placeOrders() {
   } finally {
     isLoading.value = false
   }
+}
+
+async function handlePartialOrderFailure() {
+  addToast('Một lệnh thất bại, đang tự động hủy lệnh còn lại...', 'warning');
+  
+  // Lấy thông tin từ mảng successfulPositions vừa được thêm vào
+  const successfulOrder = successfulPositions.value[0];
+  if (!successfulOrder) return;
+
+  const exchangeName = exchangeNameMap.value[successfulOrder.exchange] || successfulOrder.exchange;
+
+  try {
+    // Gọi API force-close mà không reset UI bên trong nó
+    await forceClosePositions([{ exchange: successfulOrder.exchange }], false);
+    addToast(`Lệnh trên sàn [${exchangeName}] đã được hủy thành công.`, 'success');
+  } catch (cancelErr) {
+    console.error('Lỗi nghiêm trọng: Không thể tự động hủy lệnh!', cancelErr);
+    addToast(`LỖI NGHIÊM TRỌNG: Không thể tự động hủy lệnh trên sàn [${exchangeName}]. Vui lòng kiểm tra thủ công!`, 'error');
+  }
+  reset(); // Reset UI sau khi tất cả các hành động đã hoàn tất
 }
 
 function startCloseAttempt() {
@@ -286,13 +350,47 @@ async function closeHedgedPositions() {
       symbol: symbol.value,
       positions: successfulPositions.value,
     })
-    addToast(data.message, 'success')
-    reset()
+
+    // Tạo thông báo tổng kết PNL
+    const pnlSummary = successfulPositions.value.map((pos, index) => {
+      const pnlValue = data.closedPnl[index];
+      return `[${exchangeNameMap.value[pos.exchange] || pos.exchange}]: ${pnlValue.toFixed(4)} USDT`;
+    }).join(' | ');
+    const finalMessage = `Đóng lệnh thành công! Tổng lời: ${data.totalPnl.toFixed(4)} USDT. Chi tiết: ${pnlSummary}`;
+    
+    addToast(finalMessage, 'success');
+    reset();
   } catch (err) {
     console.error('Lỗi đóng lệnh:', err)
     addToast(err.response?.data?.message || 'Không thể đóng lệnh.', 'error')
   } finally {
     isLoading.value = false
+  }
+}
+
+async function forceClosePositions(positionsToClose = null, shouldReset = true) {
+  // Dừng mọi hoạt động săn PNL hoặc polling PNL thông thường
+  isAttemptingToClose.value = false;
+  if (pnlInterval) clearInterval(pnlInterval);
+
+  isLoading.value = true;
+  // Sử dụng danh sách vị thế được truyền vào, hoặc danh sách mặc định nếu không có
+  const targetPositions = positionsToClose || successfulPositions.value;
+  try {
+    // Gọi API mới để đóng lệnh mà không cần kiểm tra PNL
+    const { data } = await axios.post('/api/order/force-close', {
+      symbol: symbol.value,
+      positions: targetPositions, // Cần gửi thông tin các sàn để đóng
+    });
+    addToast(data.message, 'success');
+    if (shouldReset) {
+      reset(); // Chỉ reset UI nếu được yêu cầu
+    }
+  } catch (err) {
+    console.error('Lỗi buộc hủy lệnh:', err);
+    addToast(err.response?.data?.message || 'Buộc hủy lệnh thất bại.', 'error');
+  } finally {
+    isLoading.value = false;
   }
 }
 

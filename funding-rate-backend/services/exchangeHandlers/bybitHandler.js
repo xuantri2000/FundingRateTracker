@@ -129,7 +129,10 @@ export const bybitHandler = {
     const queryString = `category=linear&symbol=${symbol}`;
     const data = await _signedRequest('/v5/position/list', 'GET', queryString);
     const position = data.result.list.find(p => p.symbol === symbol && parseFloat(p.size) > 0);
-    return position ? parseFloat(position.unrealisedPnl) : 0;
+    return {
+      pnl: position ? parseFloat(position.unrealisedPnl) : 0,
+      size: position ? parseFloat(position.size) : 0,
+    };
   },
 
   async setMarginType(symbol, marginType) {

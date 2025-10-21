@@ -133,7 +133,10 @@ export const binanceHandler = {
     // API v2/positionRisk là GET
     const data = await _signedRequest('/fapi/v2/positionRisk', 'GET', params);
     const position = data.find(p => p.symbol === symbol);
-    return position ? parseFloat(position.unRealizedProfit) : 0;
+    return {
+      pnl: position ? parseFloat(position.unRealizedProfit) : 0,
+      size: position ? parseFloat(position.positionAmt) : 0,
+    };
   },
 
   createWebSocket(symbol, onMessage) {

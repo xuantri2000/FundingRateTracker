@@ -89,10 +89,10 @@ router.post('/pnl', async (req, res) => {
 				if (!hasCredentials(pos.exchange)) {
 					throw new Error(`Missing credentials for ${pos.exchange}`);
 				}
-				const pnl = await handler.getPNL(symbol);
+				const positionInfo = await handler.getPNL(symbol); // getPNL giờ trả về {pnl, size}
 				return {
 					...pos,
-					pnl
+					...positionInfo
 				};
 			})
 		);
@@ -113,6 +113,38 @@ router.post('/pnl', async (req, res) => {
 			error: 'Internal server error',
 			message: error.message
 		});
+	}
+});
+
+// POST /api/order/force-close - Buộc đóng các vị thế (bỏ qua điều kiện PNL)
+router.post('/force-close', async (req, res) => {
+	try {
+		const { symbol, positions } = req.body;
+		if (!symbol || !positions || !Array.isArray(positions) || positions.length === 0) {
+			return res.status(400).json({ error: 'Invalid request, requires symbol and positions' });
+		}
+
+		console.log('🚨 Force closing orders...');
+		// Đóng tất cả các vị thế (bằng cách gọi closePosition)
+		const closeResults = await Promise.allSettled(
+			positions.map(async (pos) => {
+				const handler = exchangeHandlers[pos.exchange];
+				return handler.closePosition(symbol); // closePosition đã bao gồm hủy lệnh mở và đóng vị thế
+			})
+		);
+
+		// Kiểm tra xem có lỗi nào không
+		const failedClosures = closeResults.filter(r => r.status === 'rejected');
+		if (failedClosures.length > 0) {
+			const errorMessages = failedClosures.map(r => r.reason.message).join('; ');
+			return res.status(500).json({ message: `Buộc hủy lệnh có lỗi: ${errorMessages}`, results: closeResults });
+		}
+
+		res.json({ message: 'Tất cả các lệnh đã được buộc hủy thành công!', results: closeResults });
+
+	} catch (error) {
+		console.error('❌ Error in force-close:', error);
+		res.status(500).json({ error: 'Internal server error', message: error.message });
 	}
 });
 
@@ -155,7 +187,12 @@ router.post('/close-hedged', async (req, res) => {
 			})
 		);
 
-		res.json({ message: 'Các lệnh đã được đóng thành công!', results: closeResults });
+		res.json({
+			message: 'Các lệnh đã được đóng thành công!',
+			results: closeResults,
+			closedPnl: pnlResults, // Trả về PNL của từng lệnh tại thời điểm đóng
+			totalPnl: totalPnl      // Trả về tổng PNL
+		});
 
 	} catch (error) {
 		console.error('❌ Error in close-hedged:', error);
