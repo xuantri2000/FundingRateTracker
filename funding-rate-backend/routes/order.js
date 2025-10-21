@@ -145,12 +145,11 @@ router.post('/close-hedged', async (req, res) => {
 		console.log('📈 Total PNL is positive. Closing orders...');
 		// 3. Đóng cả 2 vị thế (bằng cách đặt lệnh ngược lại)
 		const closeResults = await Promise.allSettled(
-			positions.map(pos => {
+			positions.map(async (pos) => {
 				const handler = exchangeHandlers[pos.exchange];
 				const closeSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-				// Lấy lại giá và số lượng để tính toán lệnh đóng
-				// Lưu ý: Cần đảm bảo `pos.quantity` được lưu lại từ lúc mở lệnh
-				return handler.placeOrder(symbol, closeSide, pos.quantity);
+				// Sử dụng hàm closePosition mới với lệnh MARKET để đảm bảo khớp lệnh
+				return handler.closePosition(symbol, closeSide, pos.quantity);
 			})
 		);
 
@@ -196,7 +195,7 @@ async function processOrder(symbol, order) {
 	console.log(`   ⚡ Leverage set: ${leverage}x`);
 
 	// 5. Place order (Bước cũ)
-	const result = await handler.placeOrder(symbol, side, quantity);
+	const result = await handler.placeOrder(symbol, side, quantity, price);
 	console.log(`   ✅ Order placed: ${result.orderId || 'OK'}`);
 
 	return {
@@ -213,7 +212,7 @@ async function processOrder(symbol, order) {
 		// Quantity = (Amount * Leverage) / Price
 		const qty = (amount * leverage) / price;
 		// Làm tròn đến 3 chữ số thập phân
-		return parseFloat(qty.toFixed(3));
+		return parseFloat(qty.toFixed(2));
 	}
 
 export default router;

@@ -92,7 +92,7 @@ export const bybitHandler = {
 
   async setMarginType(symbol, marginType) {
     const targetMarginType = marginType.toUpperCase();
-    if (targetMarginType !== 'ISOLATED') {
+    if (targetMarginType === 'ISOLATED') {
       // Bybit mặc định là ISOLATED và chỉ hỗ trợ chuyển sang ISOLATED.
       // Bỏ qua nếu yêu cầu là CROSS hoặc loại khác.
       return;
@@ -122,25 +122,60 @@ export const bybitHandler = {
   },
 
   async setLeverage(symbol, leverage) {
+    const leverageStr = leverage.toString();
+    console.log(`   ⚡️ [Bybit] Checking and setting Leverage for ${symbol} to ${leverageStr}x`);
+
+    // 1. Lấy thông tin vị thế để kiểm tra đòn bẩy hiện tại
+    const queryString = `category=linear&symbol=${symbol}`;
+    try {
+      const positionData = await _signedRequest('/v5/position/list', 'GET', queryString);
+      const currentPosition = positionData.result.list.find(p => p.symbol === symbol);
+
+      // Bybit trả về đòn bẩy dưới dạng string, ví dụ "10"
+      if (currentPosition && currentPosition.leverage === leverageStr) {
+        console.log(`   ✅ [Bybit] Leverage for ${symbol} is already ${leverageStr}x. No change needed.`);
+        return; // Đòn bẩy đã đúng, không cần thay đổi
+      }
+    } catch (error) {
+       console.warn(`   ⚠️  [Bybit] Could not fetch current leverage for ${symbol}. Proceeding with setting it. Error: ${error.message}`);
+    }
+
+    // 2. Nếu đòn bẩy chưa đúng, gọi API để thay đổi
+    console.log(`   🔄 [Bybit] Changing Leverage for ${symbol} to ${leverageStr}x.`);
     const payload = {
       category: 'linear',
       symbol,
-      buyLeverage: leverage.toString(),
-      sellLeverage: leverage.toString()
+      buyLeverage: leverageStr,
+      sellLeverage: leverageStr
     };
     return _signedRequest('/v5/position/set-leverage', 'POST', payload);
   },
 
-  async placeOrder(symbol, side, quantity) {
+  async placeOrder(symbol, side, quantity, price) {
     const payload = {
       category: 'linear',
       symbol,
       side: side === 'BUY' ? 'Buy' : 'Sell',
-      orderType: 'Market',
+      orderType: 'Limit',
       qty: quantity.toString(),
+      price: price.toString(),
       timeInForce: 'GTC'
     };
     
+    const data = await _signedRequest('/v5/order/create', 'POST', payload);
+    return { orderId: data.result.orderId };
+  },
+
+  async closePosition(symbol, side, quantity) {
+    console.log(`   -> [Bybit] Closing position with MARKET order`);
+    const payload = {
+      category: 'linear',
+      symbol,
+      side: side === 'BUY' ? 'Buy' : 'Sell', // side ngược lại
+      orderType: 'Market',
+      qty: quantity.toString(),
+      reduceOnly: true // Đảm bảo lệnh này chỉ dùng để đóng vị thế
+    };
     const data = await _signedRequest('/v5/order/create', 'POST', payload);
     return { orderId: data.result.orderId };
   }

@@ -129,14 +129,28 @@ export const binanceHandler = {
     return _signedRequest('/fapi/v1/marginType', 'POST', params);
   },
 
-  async placeOrder(symbol, side, quantity) {
+  async placeOrder(symbol, side, quantity, price) {
     const params = new URLSearchParams({
       symbol,
       side,
+      type: 'LIMIT',
+      quantity: quantity.toString(),
+      price: price.toString(),
+      timeInForce: 'GTC', // Good 'Til Canceled
+    });
+    // API v1/order là POST
+    const data = await _signedRequest('/fapi/v1/order', 'POST', params);
+    return { orderId: data.orderId };
+  },
+
+  async closePosition(symbol, side, quantity) {
+    console.log(`   -> [Binance] Closing position with MARKET order`);
+    const params = new URLSearchParams({
+      symbol,
+      side, // side ngược lại để đóng
       type: 'MARKET',
       quantity: quantity.toString(),
     });
-    // API v1/order là POST
     const data = await _signedRequest('/fapi/v1/order', 'POST', params);
     return { orderId: data.orderId };
   }
