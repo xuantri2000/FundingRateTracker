@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import exchangeRoutes from './routes/exchange.js';
+import orderRoutes from './routes/order.js';
 
 const app = express();
 app.use(cors());
@@ -10,6 +11,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/exchange', exchangeRoutes);
+app.use('/api/order', orderRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
