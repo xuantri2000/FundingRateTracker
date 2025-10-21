@@ -165,7 +165,8 @@ router.post('/close-hedged', async (req, res) => {
 			})
 		);
 
-		const totalPnl = pnlResults.reduce((sum, pnl) => sum + pnl, 0);
+		// pnlResults giờ là một mảng các đối tượng {pnl, size}, cần truy cập vào thuộc tính .pnl
+		const totalPnl = pnlResults.reduce((sum, positionInfo) => sum + positionInfo.pnl, 0);
 		console.log(`\n💰 Checking PNL for closing: Total PNL = ${totalPnl.toFixed(4)} USDT`);
 
 		// 2. Kiểm tra điều kiện mới: Tổng PNL phải > 0
@@ -190,7 +191,7 @@ router.post('/close-hedged', async (req, res) => {
 		res.json({
 			message: 'Các lệnh đã được đóng thành công!',
 			results: closeResults,
-			closedPnl: pnlResults, // Trả về PNL của từng lệnh tại thời điểm đóng
+			closedPnl: pnlResults.map(p => p.pnl), // Chỉ trả về mảng các số PNL
 			totalPnl: totalPnl      // Trả về tổng PNL
 		});
 
@@ -258,7 +259,7 @@ async function processOrder(symbol, order) {
 	console.log(`   ⚡ Leverage set: ${leverage}x`);
 
 	// 5. Place order (Bước cũ)
-	const result = await handler.placeOrder(symbol, side, quantity, price);
+	const result = await handler.placeOrder(symbol, side, quantity);
 	console.log(`   ✅ Order placed: ${result.orderId || 'OK'}`);
 
 	return {

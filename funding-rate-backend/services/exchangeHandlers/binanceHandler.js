@@ -198,14 +198,12 @@ export const binanceHandler = {
     return _signedRequest('/fapi/v1/marginType', 'POST', params);
   },
 
-  async placeOrder(symbol, side, quantity, price) {
+  async placeOrder(symbol, side, quantity) {
     const params = new URLSearchParams({
       symbol,
       side,
-      type: 'LIMIT',
+      type: 'MARKET',
       quantity: quantity.toString(),
-      price: price.toString(),
-      timeInForce: 'GTC', // Good 'Til Canceled
     });
     // API v1/order là POST
     const data = await _signedRequest('/fapi/v1/order', 'POST', params);
