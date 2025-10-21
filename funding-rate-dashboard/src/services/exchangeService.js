@@ -35,7 +35,7 @@ export const fetchTop8Binance = async () => {
     const sorted = data
       .filter(item => item.lastFundingRate)
       .sort((a, b) => parseFloat(a.lastFundingRate) - parseFloat(b.lastFundingRate))
-      .slice(0, 16);
+      .slice(0, 8);
     
     return sorted.map(item => ({
       symbol: item.symbol.replace('USDT', ''),

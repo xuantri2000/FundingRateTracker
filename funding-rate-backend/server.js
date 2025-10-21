@@ -1,6 +1,6 @@
 import express from 'express'
-import dotenv from 'dotenv'
 import cors from 'cors'
+import dotenv from 'dotenv'
 import binanceRoutes from './routes/binance.js'
 
 dotenv.config()
@@ -10,6 +10,6 @@ app.use(express.json())
 
 app.use('/api/binance', binanceRoutes)
 
-app.listen(process.env.PORT, () => {
-  console.log(`✅ Server running on port ${process.env.PORT}`)
-})
+app.listen(process.env.PORT || 3001, () =>
+  console.log(`🚀 Server running on port ${process.env.PORT || 3001}`)
+)
