@@ -96,6 +96,16 @@ export const binanceHandler = {
     return _signedRequest('/fapi/v1/leverage', 'POST', params);
   },
 
+  async setMarginType(symbol, marginType) {
+    const params = new URLSearchParams({
+      symbol,
+      marginType: marginType.toUpperCase(),
+    });
+    console.log(`   🛡️  Setting Margin Type: ${marginType}`);
+    // Phải gọi _signedRequest
+    return _signedRequest('/fapi/v1/marginType', 'POST', params);
+  },
+
   async placeOrder(symbol, side, quantity) {
     const params = new URLSearchParams({
       symbol,
