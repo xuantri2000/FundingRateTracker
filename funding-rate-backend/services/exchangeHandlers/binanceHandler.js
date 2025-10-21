@@ -6,6 +6,41 @@ const CONFIG = EXCHANGES.binance;
 const BASE_URL = CONFIG.urls[MODE];
 const WS_URL = CONFIG.ws[MODE];
 
+// Cache để lưu thông tin sàn, tránh gọi API liên tục
+let exchangeInfoCache = null;
+
+async function _getExchangeInfo() {
+  if (exchangeInfoCache) return exchangeInfoCache;
+  try {
+    console.log('⏳ [Binance] Fetching exchange info...');
+    const { data } = await axios.get(`${BASE_URL}/fapi/v1/exchangeInfo`);
+    exchangeInfoCache = data;
+    console.log('✅ [Binance] Exchange info cached.');
+    return exchangeInfoCache;
+  } catch (error) {
+    console.error('❌ [Binance] Error fetching exchange info:', error.message);
+    throw new Error('Could not fetch Binance exchange info.');
+  }
+}
+
+// Cache cho leverage brackets
+let leverageBracketsCache = null;
+
+async function _getLeverageBrackets() {
+  if (leverageBracketsCache) return leverageBracketsCache;
+  try {
+    console.log('⏳ [Binance] Fetching leverage brackets...');
+    // Endpoint này trả về dữ liệu cho tất cả symbols và cần chữ ký
+    const data = await _signedRequest('/fapi/v1/leverageBracket', 'GET');
+    leverageBracketsCache = data;
+    console.log('✅ [Binance] Leverage brackets cached.');
+    return leverageBracketsCache;
+  } catch (error) {
+    console.error('❌ [Binance] Error fetching leverage brackets:', error.message);
+    throw new Error('Could not fetch Binance leverage brackets.');
+  }
+}
+
 /**
  * Hàm nội bộ để tạo và gửi request có chữ ký đến Binance
  * @param {string} endpoint - Eg. /fapi/v1/order
@@ -52,14 +87,42 @@ export const binanceHandler = {
   
   async getPrice(symbol) {
     try {
-      const { data } = await axios.get(`${BASE_URL}/fapi/v1/ticker/price`, {
+      // Sử dụng /fapi/v1/ticker/24hr đáng tin cậy hơn cho việc kiểm tra symbol
+      const { data } = await axios.get(`${BASE_URL}/fapi/v1/ticker/24hr`, {
         params: { symbol }
       });
-      return parseFloat(data.price);
+      // Nếu symbol không tồn tại, Binance trả về mảng rỗng thay vì lỗi
+      const tickerData = Array.isArray(data) ? data.find(d => d.symbol === symbol) : data;
+      if (!tickerData || !tickerData.lastPrice) {
+        throw new Error(`Không tìm thấy cặp giao dịch ${symbol} trên Binance.`);
+      }
+      return parseFloat(tickerData.lastPrice);
     } catch (error) {
       console.error(`❌ [Binance] Error getPrice ${symbol}:`, error.response?.data || error.message);
       throw new Error(`Binance API Error: ${error.response?.data?.msg || error.message}`);
     }
+  },
+
+  async getSymbolInfo(symbol) {
+    const info = await _getExchangeInfo();
+    const symbolInfo = info.symbols.find(s => s.symbol === symbol);
+    if (!symbolInfo) {
+      throw new Error(`[Binance] Symbol info not found for ${symbol}`);
+    }
+
+    // Lấy đòn bẩy tối đa
+    const brackets = await _getLeverageBrackets();
+    const symbolBrackets = brackets.find(b => b.symbol === symbol);
+    let maxLeverage = 20; // Giá trị mặc định nếu không tìm thấy
+    if (symbolBrackets && symbolBrackets.brackets.length > 0) {
+        // Đòn bẩy cao nhất nằm ở bracket đầu tiên
+        maxLeverage = symbolBrackets.brackets[0].initialLeverage;
+    }
+
+    return {
+      quantityPrecision: symbolInfo.quantityPrecision,
+      maxLeverage: maxLeverage,
+    };
   },
 
   async getPNL(symbol) {

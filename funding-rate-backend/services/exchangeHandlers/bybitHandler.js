@@ -6,6 +6,25 @@ const CONFIG = EXCHANGES.bybit;
 const BASE_URL = CONFIG.urls[MODE];
 const RECV_WINDOW = '5000'; // Bybit khuyến nghị
 
+// Cache để lưu thông tin sàn
+let instrumentsInfoCache = null;
+
+async function _getInstrumentsInfo() {
+  if (instrumentsInfoCache) return instrumentsInfoCache;
+  try {
+    console.log('⏳ [Bybit] Fetching instruments info...');
+    const { data } = await axios.get(`${BASE_URL}/v5/market/instruments-info`, {
+      params: { category: 'linear' }
+    });
+    if (data.retCode !== 0) throw new Error(data.retMsg);
+    instrumentsInfoCache = data.result.list;
+    console.log('✅ [Bybit] Instruments info cached.');
+    return instrumentsInfoCache;
+  } catch (error) {
+    throw new Error(`Could not fetch Bybit instruments info: ${error.message}`);
+  }
+}
+
 /**
  * Hàm nội bộ để tạo và gửi request có chữ ký đến Bybit
  * @param {string} endpoint - Eg. /v5/position/set-leverage
@@ -76,11 +95,34 @@ export const bybitHandler = {
         }
       });
       if (data.retCode !== 0) throw new Error(data.retMsg);
-      return parseFloat(data.result.list[0].lastPrice);
+      const ticker = data.result.list[0];
+      if (!ticker || !ticker.lastPrice) {
+        throw new Error(`Không tìm thấy cặp giao dịch ${symbol} trên Bybit.`);
+      }
+      return parseFloat(ticker.lastPrice);
     } catch (error) {
        console.error(`❌ [Bybit] Error getPrice ${symbol}:`, error.response?.data || error.message);
       throw new Error(`Bybit API Error: ${error.response?.data?.retMsg || error.message}`);
     }
+  },
+
+  async getSymbolInfo(symbol) {
+    const info = await _getInstrumentsInfo();
+    const symbolInfo = info.find(i => i.symbol === symbol);
+    if (!symbolInfo) {
+      throw new Error(`[Bybit] Symbol info not found for ${symbol}`);
+    }
+    // Bybit dùng stepSize để xác định độ chính xác. Ví dụ: stepSize "0.001" -> precision 3
+    const stepSize = parseFloat(symbolInfo.lotSizeFilter.qtyStep);
+    const precision = stepSize > 0 ? (stepSize.toString().split('.')[1] || '').length : 0;
+
+    // Lấy đòn bẩy tối đa từ leverageFilter
+    const maxLeverage = parseFloat(symbolInfo.leverageFilter.maxLeverage);
+
+    return {
+      quantityPrecision: precision,
+      maxLeverage: maxLeverage || 20, // Fallback
+    };
   },
 
   async getPNL(symbol) {

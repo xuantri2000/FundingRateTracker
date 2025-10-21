@@ -167,6 +167,11 @@ async function processOrder(symbol, order) {
 
 	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Amount: ${amount} USDT`);
 
+	// KIỂM TRA ĐẦU VÀO: amount và leverage phải là số hợp lệ và lớn hơn 0
+	if (typeof amount !== 'number' || amount <= 0 || typeof leverage !== 'number' || leverage <= 0) {
+		throw new Error('Số tiền (Amount) và Đòn bẩy (Leverage) phải là số và lớn hơn 0.');
+	}
+
 	// Kiểm tra exchange có handler không
 	const handler = exchangeHandlers[exchange];
 	if (!handler) {
@@ -182,13 +187,25 @@ async function processOrder(symbol, order) {
 	const price = await handler.getPrice(symbol);
 	console.log(`   💰 Current price: $${price}`);
 
-	// 2. Tính quantity
-	const quantity = calculateQuantity(amount, price, leverage);
+	// 2. Lấy thông tin symbol và tính quantity
+	const symbolInfo = await handler.getSymbolInfo(symbol);
+	const quantity = calculateQuantity(amount, price, leverage, symbolInfo.quantityPrecision);
 	console.log(`   📦 Quantity: ${quantity}`);
 
+	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
+	if (quantity <= 0) {
+		throw new Error(`Số tiền (Amount) quá nhỏ để giao dịch. Số lượng tính toán ra là 0.`);
+	}
+
 	// 3. SET MARGIN TYPE (BƯỚC MỚI)
+	if (!handler.setMarginType) throw new Error(`setMarginType not implemented for ${exchange}`);
 	// Luôn đặt là ISOLATED theo yêu cầu của bạn
 	await handler.setMarginType(symbol, 'ISOLATED');
+
+	// KIỂM TRA ĐÒN BẨY HỢP LỆ
+	if (leverage > symbolInfo.maxLeverage) {
+		throw new Error(`Đòn bẩy ${leverage}x vượt quá mức tối đa cho phép của sàn là ${symbolInfo.maxLeverage}x cho cặp ${symbol}.`);
+	}
 
 	// 4. Set leverage (Bước cũ)
 	await handler.setLeverage(symbol, leverage);
@@ -208,11 +225,13 @@ async function processOrder(symbol, order) {
 }
 
 	// Tính quantity dựa trên amount và giá
-	function calculateQuantity(amount, price, leverage) {
+	function calculateQuantity(amount, price, leverage, precision) {
 		// Quantity = (Amount * Leverage) / Price
 		const qty = (amount * leverage) / price;
-		// Làm tròn đến 3 chữ số thập phân
-		return parseFloat(qty.toFixed(2));
+		console.log(qty);
+		console.log(`   📐 Calculated Qty (raw): ${qty}, Precision: ${precision}`);
+		// Làm tròn đến độ chính xác được yêu cầu bởi sàn
+		return parseFloat(qty.toFixed(precision));
 	}
 
 export default router;
