@@ -1,19 +1,28 @@
-import express from 'express'
-import cors from 'cors'
-import dotenv from 'dotenv'
-import binanceRoutes from './routes/binance.js'
-import exchangeRoutes from './routes/exchange.js'
+// server.js
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import exchangeRoutes from './routes/exchange.js';
 
-dotenv.config()
-const app = express()
-app.use(cors())
-app.use(express.json())
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-// 🧩 Các route
-app.use('/exchange', exchangeRoutes)
-app.use('/binance', binanceRoutes)
+// Routes
+app.use('/api/exchange', exchangeRoutes);
 
-// 🚀 Start
-app.listen(process.env.PORT || 3001, () =>
-  console.log(`🚀 Server running on port ${process.env.PORT || 3001}`)
-)
+// Health check
+app.get('/health', (req, res) => {
+  const MODE = process.env.TRADING_MODE || 'testnet';
+  res.json({ 
+    status: 'ok', 
+    mode: MODE,
+    timestamp: new Date().toISOString()
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Trading mode: ${process.env.TRADING_MODE || 'testnet'}`);
+});
