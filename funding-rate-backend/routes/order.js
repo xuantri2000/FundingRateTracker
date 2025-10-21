@@ -136,20 +136,22 @@ router.post('/close-hedged', async (req, res) => {
 		const totalPnl = pnlResults.reduce((sum, pnl) => sum + pnl, 0);
 		console.log(`\n💰 Checking PNL for closing: Total PNL = ${totalPnl.toFixed(4)} USDT`);
 
-		// 2. Kiểm tra điều kiện PNL > 0
+		// 2. Kiểm tra điều kiện mới: Tổng PNL phải > 0
 		if (totalPnl <= 0) {
 			console.log('📉 Total PNL is not positive. Orders will not be closed.');
-			return res.status(400).json({ message: `Không thể đóng lệnh, tổng PNL là ${totalPnl.toFixed(4)} USDT (<= 0)` });
+			return res.status(400).json({
+				message: `Không thể đóng lệnh, tổng PNL là ${totalPnl.toFixed(4)} USDT (<= 0)`
+			});
 		}
 
 		console.log('📈 Total PNL is positive. Closing orders...');
 		// 3. Đóng cả 2 vị thế (bằng cách đặt lệnh ngược lại)
 		const closeResults = await Promise.allSettled(
 			positions.map(async (pos) => {
-				const handler = exchangeHandlers[pos.exchange];
-				const closeSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-				// Sử dụng hàm closePosition mới với lệnh MARKET để đảm bảo khớp lệnh
-				return handler.closePosition(symbol, closeSide, pos.quantity);
+				const handler = exchangeHandlers[pos.exchange]; // Lấy handler của sàn
+				// Gọi hàm closePosition mà không cần truyền quantity hay side,
+				// vì hàm này sẽ tự động lấy vị thế hiện tại và đóng toàn bộ.
+				return handler.closePosition(symbol);
 			})
 		);
 
@@ -182,6 +184,13 @@ async function processOrder(symbol, order) {
 	if (!hasCredentials(exchange)) {
 		throw new Error(`Missing API credentials for ${exchange}`);
 	}
+
+	// BƯỚC MỚI: Đóng tất cả các lệnh và vị thế cũ trước khi mở lệnh mới
+	console.log(`   🧹 [${exchange}] Dọn dẹp các lệnh và vị thế cũ cho ${symbol}...`);
+	if (!handler.closePosition) {
+		throw new Error(`closePosition not implemented for ${exchange}`);
+	}
+	await handler.closePosition(symbol);
 
 	// 1. Lấy giá hiện tại
 	const price = await handler.getPrice(symbol);

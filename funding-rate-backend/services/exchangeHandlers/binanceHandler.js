@@ -69,6 +69,9 @@ async function _signedRequest(endpoint, method = 'GET', params = new URLSearchPa
       response = await axios.post(url, null, { // POST với body rỗng, params trong URL
         headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+    } else if (method === 'DELETE') {
+      // Thêm xử lý cho phương thức DELETE
+      response = await axios.delete(url, { headers });
     } else { // GET
       response = await axios.get(url, { headers });
     }
@@ -206,13 +209,46 @@ export const binanceHandler = {
     return { orderId: data.orderId };
   },
 
-  async closePosition(symbol, side, quantity) {
-    console.log(`   -> [Binance] Closing position with MARKET order`);
+  async cancelAllOpenOrders(symbol) {
+    console.log(`   -> [Binance] Cancelling all open orders for ${symbol}`);
+    const params = new URLSearchParams({ symbol });
+    // API v1/allOpenOrders là DELETE
+    try {
+      await _signedRequest('/fapi/v1/allOpenOrders', 'DELETE', params);
+      console.log(`   ✅ [Binance] Successfully cancelled open orders for ${symbol}.`);
+    } catch (error) {
+      // Bỏ qua lỗi "No open orders" (code -2011)
+      if (!error.message.includes('-2011')) throw error;
+      console.log(`   ⓘ [Binance] No open orders to cancel for ${symbol}.`);
+    }
+  },
+
+  async closePosition(symbol) {
+    console.log(`   -> [Binance] Starting full closure process for ${symbol}...`);
+    
+    // Bước 1: Hủy tất cả các lệnh đang mở
+    await this.cancelAllOpenOrders(symbol);
+
+    // 1. Lấy thông tin vị thế hiện tại
+    const positionParams = new URLSearchParams({ symbol });
+    const positionRiskData = await _signedRequest('/fapi/v2/positionRisk', 'GET', positionParams);
+    const currentPosition = positionRiskData.find(p => p.symbol === symbol);
+
+    if (!currentPosition || parseFloat(currentPosition.positionAmt) === 0) {
+      console.log(`   ✅ [Binance] No open position found for ${symbol}.`);
+      return { message: `No open position for ${symbol}` };
+    }
+
+    const positionAmt = parseFloat(currentPosition.positionAmt);
+    const closeSide = positionAmt > 0 ? 'SELL' : 'BUY'; // Nếu đang Long (dương), thì bán. Nếu đang Short (âm), thì mua.
+    const quantityToClose = Math.abs(positionAmt);
+
+    console.log(`   -> [Binance] Closing ${quantityToClose} of ${symbol} with side ${closeSide}`);
     const params = new URLSearchParams({
       symbol,
-      side, // side ngược lại để đóng
+      side: closeSide,
       type: 'MARKET',
-      quantity: quantity.toString(),
+      quantity: quantityToClose.toString(),
     });
     const data = await _signedRequest('/fapi/v1/order', 'POST', params);
     return { orderId: data.orderId };

@@ -208,14 +208,44 @@ export const bybitHandler = {
     return { orderId: data.result.orderId };
   },
 
-  async closePosition(symbol, side, quantity) {
-    console.log(`   -> [Bybit] Closing position with MARKET order`);
+  async cancelAllOpenOrders(symbol) {
+    console.log(`   -> [Bybit] Cancelling all open orders for ${symbol}`);
+    const payload = { category: 'linear', symbol };
+    try {
+      await _signedRequest('/v5/order/cancel-all', 'POST', payload);
+      console.log(`   ✅ [Bybit] Successfully cancelled open orders for ${symbol}.`);
+    } catch (error) {
+      // Bybit có thể trả về lỗi nếu không có lệnh nào để hủy, chúng ta có thể bỏ qua
+      console.log(`   ⓘ [Bybit] No open orders to cancel or already cancelled for ${symbol}.`);
+    }
+  },
+
+  async closePosition(symbol) {
+    console.log(`   -> [Bybit] Starting full closure process for ${symbol}...`);
+
+    // Bước 1: Hủy tất cả các lệnh đang mở
+    await this.cancelAllOpenOrders(symbol);
+
+    // 2. Lấy thông tin vị thế hiện tại để đóng
+    const queryString = `category=linear&symbol=${symbol}`;
+    const positionData = await _signedRequest('/v5/position/list', 'GET', queryString);
+    const currentPosition = positionData.result.list.find(p => p.symbol === symbol && parseFloat(p.size) > 0);
+
+    if (!currentPosition || parseFloat(currentPosition.size) === 0) {
+      console.log(`   ✅ [Bybit] No open position found for ${symbol}.`);
+      return { message: `No open position for ${symbol}` };
+    }
+
+    const positionSize = parseFloat(currentPosition.size);
+    const closeSide = currentPosition.side === 'Buy' ? 'Sell' : 'Buy'; // Nếu đang Buy, thì bán. Nếu đang Sell, thì mua.
+
+    console.log(`   -> [Bybit] Closing ${positionSize} of ${symbol} with side ${closeSide}`);
     const payload = {
       category: 'linear',
       symbol,
-      side: side === 'BUY' ? 'Buy' : 'Sell', // side ngược lại
+      side: closeSide,
       orderType: 'Market',
-      qty: quantity.toString(),
+      qty: positionSize.toString(),
       reduceOnly: true // Đảm bảo lệnh này chỉ dùng để đóng vị thế
     };
     const data = await _signedRequest('/v5/order/create', 'POST', payload);

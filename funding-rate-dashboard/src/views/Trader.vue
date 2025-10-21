@@ -89,16 +89,27 @@
         </div>
 
         <div class="flex justify-center gap-4">
-           <button
-            @click="closeHedgedPositions"
-            :disabled="isLoading"
-            class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-red-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <!-- Nút bắt đầu/dừng hủy lệnh -->
+          <button v-if="!isAttemptingToClose"
+                  @click="startCloseAttempt"
+                  :disabled="isLoading"
+                  class="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-orange-500/30 font-semibold transition-all disabled:opacity-50">
             <span v-if="isLoading">Đang xử lý...</span>
-            <span v-else>💰 Đóng Lệnh (Khi PNL > 0)</span>
+            <span v-else>Bắt đầu hủy lệnh</span>
           </button>
+
+          <button v-else
+                  @click="stopCloseAttempt"
+                  :disabled="isLoading"
+                  class="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-xl shadow-lg shadow-yellow-500/30 font-semibold transition-all disabled:opacity-50 flex items-center gap-2">
+            <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span>Đang săn PNL... (Dừng)</span>
+          </button>
+
+          <!-- Nút Quay lại -->
           <button
             @click="reset"
+            :disabled="isAttemptingToClose"
             class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-all"
           >
             Quay lại
@@ -136,6 +147,7 @@ const isTrackingPnl = ref(false)
 const pnlData = ref([])
 const successfulPositions = ref([])
 let pnlInterval = null
+const isAttemptingToClose = ref(false)
 
 onMounted(async () => {
   try {
@@ -165,25 +177,39 @@ const getPnlClass = (pnl) => {
   return pnl > 0 ? 'text-green-400' : pnl < 0 ? 'text-red-400' : 'text-slate-400'
 }
 
-const startPnlTracking = () => {
+const startPnlTracking = (isHighFrequency = false) => {
   if (pnlInterval) clearInterval(pnlInterval)
   
   const fetchPnl = async () => {
+    if (successfulPositions.value.length < 2) return;
+
     try {
       const { data } = await axios.post('/api/order/pnl', {
         symbol: symbol.value,
         positions: successfulPositions.value,
       })
-      pnlData.value = data.results.map(r => r.data)
+      const newPnlData = data.results.map(r => r.data)
+      pnlData.value = newPnlData
+
+      // Nếu đang trong chế độ săn PNL, kiểm tra điều kiện đóng
+      if (isAttemptingToClose.value) {
+        const pnl1 = newPnlData[0]?.pnl ?? -1;
+        const pnl2 = newPnlData[1]?.pnl ?? -1;
+        if (pnl1 > 0 && pnl2 > 0) {
+          console.log("✅ Điều kiện PNL > 0 cho cả 2 lệnh đã đạt! Tự động đóng lệnh.");
+          addToast('Điều kiện PNL đạt! Tự động đóng lệnh.', 'success');
+          await closeHedgedPositions();
+        }
+      }
     } catch (error) {
       console.error('Lỗi fetch PNL:', error)
       addToast('Lỗi khi cập nhật PNL.', 'error')
       clearInterval(pnlInterval)
     }
   }
-
+  const intervalTime = isHighFrequency ? 500 : 5000; // 500ms khi săn, 5s khi theo dõi
   fetchPnl() // Fetch immediately
-  pnlInterval = setInterval(fetchPnl, 5000) // Then every 5 seconds
+  pnlInterval = setInterval(fetchPnl, intervalTime)
 }
 
 async function placeOrders() {
@@ -237,12 +263,28 @@ async function placeOrders() {
   }
 }
 
+function startCloseAttempt() {
+  isAttemptingToClose.value = true;
+  addToast('Bắt đầu săn PNL. Lệnh sẽ tự đóng khi cả 2 PNL > 0.', 'info');
+  startPnlTracking(true); // Bắt đầu polling tần suất cao
+}
+
+function stopCloseAttempt() {
+  isAttemptingToClose.value = false;
+  addToast('Đã dừng săn PNL.', 'warning');
+  startPnlTracking(false); // Quay lại polling tần suất thấp
+}
+
 async function closeHedgedPositions() {
+  // Dừng việc săn PNL để tránh gọi API nhiều lần
+  isAttemptingToClose.value = false;
+  if (pnlInterval) clearInterval(pnlInterval);
+
   isLoading.value = true
   try {
     const { data } = await axios.post('/api/order/close-hedged', {
       symbol: symbol.value,
-      positions: successfulPositions.value
+      positions: successfulPositions.value,
     })
     addToast(data.message, 'success')
     reset()
@@ -256,6 +298,7 @@ async function closeHedgedPositions() {
 
 function reset() {
   isTrackingPnl.value = false
+  isAttemptingToClose.value = false
   if (pnlInterval) clearInterval(pnlInterval)
   pnlData.value = []
   successfulPositions.value = []
