@@ -97,12 +97,35 @@ export const binanceHandler = {
   },
 
   async setMarginType(symbol, marginType) {
+    const targetMarginType = marginType.toUpperCase();
+    console.log(`   🛡️  [Binance] Checking and setting Margin Type for ${symbol} to ${targetMarginType}`);
+
+    // 1. Lấy thông tin vị thế hiện tại để kiểm tra marginType
+    const positionParams = new URLSearchParams({ symbol });
+    let currentMarginType = null;
+    try {
+      const positionRiskData = await _signedRequest('/fapi/v2/positionRisk', 'GET', positionParams);
+      const currentPosition = positionRiskData.find(p => p.symbol === symbol);
+      if (currentPosition) {
+        currentMarginType = currentPosition.marginType;
+      }
+    } catch (error) {
+      console.warn(`   ⚠️  [Binance] Could not fetch current margin type for ${symbol}. Proceeding with setting margin type. Error: ${error.message}`);
+      // Nếu không thể lấy được margin type hiện tại (ví dụ: không có vị thế mở),
+      // ta vẫn cố gắng đặt margin type để đảm bảo.
+    }
+
+    if (currentMarginType && currentMarginType.toUpperCase() === targetMarginType) {
+      console.log(`   ✅ [Binance] Margin Type for ${symbol} is already ${targetMarginType}. No change needed.`);
+      return; // Không cần thay đổi nếu đã đúng loại
+    }
+
+    // 2. Nếu chưa phải là ISOLATED, thì mới gọi API để thay đổi
     const params = new URLSearchParams({
       symbol,
-      marginType: marginType.toUpperCase(),
+      marginType: targetMarginType,
     });
-    console.log(`   🛡️  Setting Margin Type: ${marginType}`);
-    // Phải gọi _signedRequest
+    console.log(`   🔄 [Binance] Changing Margin Type for ${symbol} from ${currentMarginType || 'unknown'} to ${targetMarginType}`);
     return _signedRequest('/fapi/v1/marginType', 'POST', params);
   },
 
