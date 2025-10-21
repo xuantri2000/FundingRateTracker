@@ -22,13 +22,13 @@
         <!-- Long Panel -->
         <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
           <h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
-          <TradingPanel v-model="longOrder" side="LONG" />
+          <TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges" />
         </div>
 
         <!-- Short Panel -->
         <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
           <h2 class="text-xl text-red-400 font-semibold mb-4">Lệnh Short (SELL)</h2>
-          <TradingPanel v-model="shortOrder" side="SHORT" />
+          <TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges" />
         </div>
       </div>
 
@@ -57,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import TradingPanel from '@/components/TradingPanel.vue'
 
@@ -65,6 +65,16 @@ const symbol = ref('BTCUSDT')
 const longOrder = ref(null)
 const shortOrder = ref(null)
 const results = ref([])
+const exchanges = ref([])
+
+onMounted(async () => {
+  try {
+    const { data } = await axios.get('/api/exchange')
+    exchanges.value = data
+  } catch (err) {
+    console.error('❌ Lỗi tải danh sách sàn:', err)
+  }
+})
 
 async function placeOrders() {
   if (!symbol.value || !longOrder.value || !shortOrder.value) {
