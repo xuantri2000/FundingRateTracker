@@ -246,8 +246,8 @@ async function processOrder(symbol, order) {
 
 	// 3. SET MARGIN TYPE (BƯỚC MỚI)
 	if (!handler.setMarginType) throw new Error(`setMarginType not implemented for ${exchange}`);
-	// Luôn đặt là ISOLATED theo yêu cầu của bạn
-	await handler.setMarginType(symbol, 'ISOLATED');
+	// Luôn đặt là CROSS theo yêu cầu
+	await handler.setMarginType(symbol, 'CROSS');
 
 	// KIỂM TRA ĐÒN BẨY HỢP LỆ
 	if (leverage > symbolInfo.maxLeverage) {

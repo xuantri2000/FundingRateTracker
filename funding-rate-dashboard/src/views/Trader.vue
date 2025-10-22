@@ -109,7 +109,7 @@
 
           <!-- Nút Buộc hủy lệnh -->
           <button
-            @click="forceClosePositions"
+            @click="() => forceClosePositions()"
             :disabled="isLoading"
             class="bg-red-800 hover:bg-red-900 text-white px-6 py-3 rounded-xl shadow-lg shadow-red-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
