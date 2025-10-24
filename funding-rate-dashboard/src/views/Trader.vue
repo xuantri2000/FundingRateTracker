@@ -160,6 +160,10 @@ const successfulPositions = ref([])
 let pnlInterval = null
 const isAttemptingToClose = ref(false)
 
+// --- State mới cho logic gỡ lỗ ---
+const isRecoveringLoss = ref(false); // Cờ báo hiệu đang trong chế độ gỡ lỗ
+const recoveryTargetPnl = ref(0); // Mục tiêu PNL cần đạt để gỡ lỗ
+
 onMounted(async () => {
   try {
     const { data } = await axios.get('/api/exchange')
@@ -232,22 +236,43 @@ const startPnlTracking = (isHighFrequency = false) => {
         return; // Dừng xử lý thêm
       }
 
+      // --- LOGIC GỠ LỖ KHI MỘT VỊ THẾ BỊ ĐÓNG ---
+      // Nếu đang trong chế độ gỡ lỗ, chỉ cần kiểm tra PNL của vị thế còn lại
+      if (isRecoveringLoss.value) {
+        const remainingPosition = newPnlData[0];
+        if (remainingPosition && remainingPosition.pnl >= recoveryTargetPnl.value) {
+          addToast(`Gỡ lỗ thành công! PNL đạt ${remainingPosition.pnl.toFixed(2)} >= mục tiêu ${recoveryTargetPnl.value.toFixed(2)}. Đang đóng lệnh...`, 'success');
+          await forceClosePositions(); // Đóng nốt lệnh còn lại và reset
+        }
+        return; // Không xử lý các logic khác nữa
+      }
+
       // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý
       if (newPnlData.length < 2 || newPnlData.some(p => p.size === 0)) {
-        addToast('Phát hiện một vị thế đã bị đóng! Đang buộc hủy lệnh còn lại...', 'error');
-        console.error('🚨 Fail-safe triggered: Một vị thế đã biến mất. Đóng lệnh còn lại.');
-        // Dừng tất cả các vòng lặp
-        isAttemptingToClose.value = false;
-        if (pnlInterval) clearInterval(pnlInterval);
-        // Tìm vị thế còn lại và đóng nó
-        const remainingPositions = newPnlData.filter(p => p.size > 0).map(p => ({ exchange: p.exchange }));
-        if (remainingPositions.length > 0) {
-          // Gọi force-close cho các vị thế còn lại
-          await forceClosePositions(remainingPositions);
+        // Lấy dữ liệu PNL của lần gần nhất (khi còn đủ 2 vị thế)
+        const lastKnownPnl = pnlData.value;
+        const closedPosition = lastKnownPnl.find(p => !newPnlData.some(np => np.exchange === p.exchange));
+
+        // Nếu tìm thấy vị thế đã đóng và nó đang lỗ
+        if (closedPosition && closedPosition.pnl < 0) {
+          isRecoveringLoss.value = true;
+          recoveryTargetPnl.value = -closedPosition.pnl; // Mục tiêu là số dương của khoản lỗ
+          isAttemptingToClose.value = false; // Tắt chế độ săn PNL thông thường
+          
+          const remainingPos = newPnlData[0];
+          const exchangeName = exchangeNameMap.value[remainingPos.exchange] || remainingPos.exchange;
+
+          addToast(`Một vị thế đã đóng với lỗ ${closedPosition.pnl.toFixed(2)} USDT. Chuyển sang chế độ gỡ lỗ cho [${exchangeName}].`, 'warning');
+          addToast(`Mục tiêu PNL mới: >= ${recoveryTargetPnl.value.toFixed(2)} USDT.`, 'info');
+          
+          startPnlTracking(true); // Duy trì polling nhanh
         } else {
-          reset(); // Nếu không còn gì, chỉ reset UI
+          // Nếu vị thế đóng không lỗ, hoặc không tìm thấy, thì đóng lệnh còn lại như cũ
+          addToast('Phát hiện một vị thế đã bị đóng! Đang buộc hủy lệnh còn lại...', 'error');
+          console.error('🚨 Fail-safe triggered: Một vị thế đã biến mất. Đóng lệnh còn lại.');
+          await forceClosePositions();
         }
-        return; // Dừng xử lý tiếp
+        return; // Dừng xử lý các logic khác trong lần fetch này
       }
 
       // Nếu đang trong chế độ săn PNL, kiểm tra điều kiện đóng
@@ -421,5 +446,7 @@ function reset() {
   if (pnlInterval) clearInterval(pnlInterval)
   pnlData.value = []
   successfulPositions.value = []
+  isRecoveringLoss.value = false; // Reset cờ gỡ lỗ
+  recoveryTargetPnl.value = 0;
 }
 </script>

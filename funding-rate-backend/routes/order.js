@@ -156,6 +156,8 @@ router.post('/close-hedged', async (req, res) => {
 			return res.status(400).json({ error: 'Invalid request, requires symbol and 2 positions' });
 		}
 
+		console.log(`\n💰 Received request to close hedged positions for ${symbol}.`);
+		console.log('   -> Verifying PNL on server-side as a final check...');
 		// 1. Lấy PNL của cả 2 vị thế
 		const pnlResults = await Promise.all(
 			positions.map(pos => {
@@ -167,7 +169,7 @@ router.post('/close-hedged', async (req, res) => {
 
 		// pnlResults giờ là một mảng các đối tượng {pnl, size}, cần truy cập vào thuộc tính .pnl
 		const totalPnl = pnlResults.reduce((sum, positionInfo) => sum + positionInfo.pnl, 0);
-		console.log(`\n💰 Checking PNL for closing: Total PNL = ${totalPnl.toFixed(4)} USDT`);
+		console.log(`   -> Server-side check result: Total PNL = ${totalPnl.toFixed(4)} USDT`);
 
 		// 2. Kiểm tra điều kiện mới: Tổng PNL phải > 0
 		if (totalPnl <= 0) {
