@@ -208,6 +208,30 @@ const startPnlTracking = (isHighFrequency = false) => {
       const newPnlData = data.results.map(r => r.data)
       pnlData.value = newPnlData
 
+      const currentTotalPnl = newPnlData.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+      const totalInvestment = (longOrder.value?.amount || 0) + (shortOrder.value?.amount || 0);
+
+      // Tự động tăng tốc độ polling nếu lỗ nặng
+      // Ví dụ: nếu lỗ vượt quá 50% vốn, chuyển sang polling nhanh hơn
+    //   if (totalInvestment > 0 && currentTotalPnl < -0.5 * totalInvestment) {
+    //     // Nếu chưa ở chế độ polling nhanh, chuyển sang
+    //     if (!isHighFrequencyPolling.value) {
+    //       isHighFrequencyPolling.value = true;
+    //       startPnlTracking(); // Gọi lại để đặt lại interval
+    //     }
+    //   }
+
+      // --- LOGIC DỪNG LỖ (STOP-LOSS) ---
+      // Tính tổng vốn đầu tư ban đầu
+      // Đặt ngưỡng dừng lỗ là -95% tổng vốn
+      const stopLossThreshold = -0.95 * totalInvestment;
+
+      if (totalInvestment > 0 && currentTotalPnl <= stopLossThreshold) {
+        addToast(`Dừng lỗ tự động! Tổng PNL (${currentTotalPnl.toFixed(2)}) đã chạm ngưỡng ${stopLossThreshold.toFixed(2)} USDT.`, 'error');
+        forceClosePositions(); // Buộc đóng tất cả các vị thế
+        return; // Dừng xử lý thêm
+      }
+
       // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý
       if (newPnlData.length < 2 || newPnlData.some(p => p.size === 0)) {
         addToast('Phát hiện một vị thế đã bị đóng! Đang buộc hủy lệnh còn lại...', 'error');
@@ -229,9 +253,6 @@ const startPnlTracking = (isHighFrequency = false) => {
       // Nếu đang trong chế độ săn PNL, kiểm tra điều kiện đóng
       // CẬP NHẬT LOGIC: Kiểm tra tổng PNL > 0
       if (isAttemptingToClose.value) {
-        // Tính tổng PNL từ dữ liệu mới nhận được
-        const currentTotalPnl = newPnlData.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
-
         // Kiểm tra điều kiện: Tổng PNL > 0
         if (currentTotalPnl > 0) {
           console.log(`✅ Điều kiện tổng PNL > 0 đã đạt (${currentTotalPnl.toFixed(4)})! Tự động đóng lệnh.`);
@@ -247,7 +268,7 @@ const startPnlTracking = (isHighFrequency = false) => {
     }
   }
   const intervalTime = isHighFrequency ? 500 : 5000; // 500ms khi săn, 5s khi theo dõi
-  fetchPnl() // Fetch immediately
+  if (!pnlInterval) fetchPnl() // Fetch immediately on first run
   pnlInterval = setInterval(fetchPnl, intervalTime)
 }
 
