@@ -205,6 +205,7 @@ router.post('/close-hedged', async (req, res) => {
 async function processOrder(symbol, order) {
 	const { exchange, side, leverage, amount } = order;
 
+	console.log(`------------------------ [${exchange.toUpperCase()}] ------------------------`);
 	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Amount: ${amount} USDT`);
 
 	// KIỂM TRA ĐẦU VÀO: amount và leverage phải là số hợp lệ và lớn hơn 0
@@ -237,7 +238,7 @@ async function processOrder(symbol, order) {
 	// 2. Lấy thông tin symbol và tính quantity
 	const symbolInfo = await handler.getSymbolInfo(symbol);
 	const quantity = calculateQuantity(amount, price, leverage, symbolInfo.quantityPrecision);
-	console.log(`   📦 Quantity: ${quantity}`);
+	console.log(` [${exchange.toUpperCase()}] 📦 Quantity: ${quantity}`);
 
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	if (quantity <= 0) {
@@ -275,7 +276,7 @@ async function processOrder(symbol, order) {
 	function calculateQuantity(amount, price, leverage, precision) {
 		// Quantity = (Amount * Leverage) / Price
 		const qty = (amount * leverage) / price;
-		console.log(qty);
+		// console.log(qty);
 		console.log(`   📐 Calculated Qty (raw): ${qty}, Precision: ${precision}`);
 		// Làm tròn đến độ chính xác được yêu cầu bởi sàn
 		return parseFloat(qty.toFixed(precision));
