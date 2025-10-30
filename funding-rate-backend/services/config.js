@@ -20,12 +20,21 @@ export const EXCHANGES = {
 		},
 		ws: { /* ... */ }
 	},
-	// THÊM WHITEBIT
 	whitebit: {
 		name: 'WhiteBIT',
 		urls: {
 			production: 'https://whitebit.com',
 			testnet: 'https://whitebit.com'
+		},
+		ws: {}
+	},
+	// THÊM BITGET
+	bitget: {
+		name: 'Bitget',
+		urls: {
+			// Bitget API V2 dùng chung URL cho cả production và demo trading
+			production: 'https://api.bitget.com',
+			testnet: 'https://api.bitget.com'
 		},
 		ws: {}
 	}
@@ -34,13 +43,14 @@ export const EXCHANGES = {
 /**
  * Lấy API key và Secret key cho một sàn
  * @param {string} exchangeId - 'binance', 'bybit', 'whitebit'
- * @returns {{apiKey: string, secretKey: string}}
+ * @returns {{apiKey: string, secretKey: string, passphrase?: string}}
  */
 export function getCredentials(exchangeId) {
 	const prefix = exchangeId.toUpperCase();
 	return {
 		apiKey: process.env[`${prefix}_API_KEY`],
-		secretKey: process.env[`${prefix}_SECRET_KEY`]
+		secretKey: process.env[`${prefix}_SECRET_KEY`],
+		passphrase: process.env[`${prefix}_PASSPHRASE`] || "" // Thêm passphrase cho Bitget
 	};
 }
 
@@ -50,6 +60,12 @@ export function getCredentials(exchangeId) {
  * @returns {boolean}
  */
 export function hasCredentials(exchangeId) {
-	const { apiKey, secretKey } = getCredentials(exchangeId);
-	return !!(apiKey && secretKey);
+	const creds = getCredentials(exchangeId);
+	// Bitget yêu cầu thêm passphrase
+	if (exchangeId === 'bitget') {
+		// Kiểm tra cả 3 giá trị: apiKey, secretKey, và passphrase
+		return !!(creds.apiKey && creds.secretKey && creds.passphrase);
+	}
+	// Các sàn khác chỉ cần apiKey và secretKey
+	return !!(creds.apiKey && creds.secretKey);
 }

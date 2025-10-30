@@ -16,10 +16,14 @@ async function _getFuturesInfo() {
     console.log('⏳ [WhiteBIT] Fetching futures markets info...');
     // Endpoint public để lấy thông tin các cặp futures
     const { data } = await axios.get(`${BASE_URL}/api/v4/public/futures`);
-    // API trả về một object với key là ticker_id (vd: "BTC_PERP")
-    futuresInfoCache = data;
-    console.log('✅ [WhiteBIT] Futures markets info cached.');
-    return futuresInfoCache;
+    // ✅ API trả về { success: true, message: null, result: [...] }
+    if (data.success && Array.isArray(data.result)) {
+      futuresInfoCache = data.result;
+      console.log(`✅ [WhiteBIT] Futures markets info cached: ${futuresInfoCache.length} markets`);
+      return futuresInfoCache;
+    } else {
+      throw new Error('Invalid futures API response format');
+    }
   } catch (error) {
     console.error('❌ [WhiteBIT] Error fetching futures info:', error.response?.data || error.message);
     throw new Error('Could not fetch WhiteBIT futures info.');
@@ -27,28 +31,31 @@ async function _getFuturesInfo() {
 }
 
 /**
- * Hàm nội bộ để tạo và gửi request có chữ ký đến WhiteBIT V4
- * @param {string} requestPath - Eg. /api/v4/trade-account/positions
- * @param {string} method - 'GET' hoặc 'POST'
- * @param {object} payload - Body của request (ngay cả với GET)
- * @returns {Promise<any>} - Dữ liệu data từ response của axios
+ * Gửi request có chữ ký đến WhiteBIT API V4
+ * @param {string} requestPath - Đường dẫn API, ví dụ: /api/v4/collateral-account/balance
+ * @param {string} method - 'POST', 'GET', hoặc 'DELETE'
+ * @param {object} payload - Dữ liệu body
+ * @returns {Promise<any>} - Dữ liệu phản hồi từ WhiteBIT
  */
 async function _signedRequest(requestPath, method = 'POST', payload = {}) {
-   // WhiteBIT chỉ hoạt động ở production mode cho API private
-   if (MODE !== 'production') {
-      throw new Error("WhiteBIT private API calls only work in 'production' mode.");
-   }
-
   const credentials = getCredentials('whitebit');
   const apiKey = credentials.apiKey;
   const apiSecret = credentials.secretKey;
 
-  // Chuẩn bị payload và headers theo yêu cầu của WhiteBIT V4
+  // ✅ BẮT BUỘC: WhiteBIT yêu cầu trường request + nonce trong body
+  if (!payload.request) {
+    payload.request = requestPath;
+  }
+  if (!payload.nonce) {
+    payload.nonce = Date.now();
+  }
+
+  // Chuẩn bị payload và ký HMAC SHA512
   const payloadJSON = JSON.stringify(payload);
   const payloadBase64 = Buffer.from(payloadJSON).toString('base64');
 
   const signature = crypto
-    .createHmac('sha256', apiSecret)
+    .createHmac('sha512', apiSecret)
     .update(payloadBase64)
     .digest('hex');
 
@@ -63,35 +70,34 @@ async function _signedRequest(requestPath, method = 'POST', payload = {}) {
 
   try {
     let response;
-    // WhiteBIT V4 dùng POST cho cả việc lấy dữ liệu (như positions)
-    if (method.toUpperCase() === 'POST') {
-      response = await axios.post(url, payload, { headers });
-    } else if (method.toUpperCase() === 'GET') {
-       // Một số endpoint đặc biệt có thể là GET, dù ít gặp hơn cho private
-       // Lưu ý: Payload vẫn cần để tạo signature, nhưng không gửi trong body GET
-       response = await axios.get(url, { headers });
-    } else if (method.toUpperCase() === 'DELETE') {
-       // Xử lý DELETE nếu cần (ví dụ: hủy lệnh)
-       response = await axios.delete(url, { headers, data: payload }); // Payload có thể cần trong data cho DELETE
-    }
-     else {
-      throw new Error(`Unsupported method: ${method}`);
+    switch (method.toUpperCase()) {
+      case 'POST':
+        response = await axios.post(url, payload, { headers });
+        break;
+      case 'GET':
+        response = await axios.get(url, { headers });
+        break;
+      case 'DELETE':
+        response = await axios.delete(url, { headers, data: payload });
+        break;
+      default:
+        throw new Error(`Unsupported HTTP method: ${method}`);
     }
 
-    // WhiteBIT trả về 200 OK ngay cả khi có lỗi logic, cần check response body
-    // Cần kiểm tra cấu trúc response thành công của từng endpoint cụ thể
-    // Ví dụ, nhiều endpoint trả về lỗi trực tiếp trong data object
+    // WhiteBIT có thể trả lỗi trong body dù HTTP 200
     if (response.data && (response.data.code !== undefined && response.data.code !== 0)) {
-       throw new Error(`WhiteBIT API Error (${response.data.code}): ${JSON.stringify(response.data.errors || response.data.message)}`);
+      throw new Error(
+        `WhiteBIT API Error (${response.data.code}): ${
+          JSON.stringify(response.data.errors || response.data.message)
+        }`
+      );
     }
-    // Một số endpoint (như lấy positions) trả về mảng trực tiếp khi thành công
-    return response.data;
 
+    return response.data;
   } catch (error) {
     const errorData = error.response?.data;
     const errorMessage = errorData ? JSON.stringify(errorData) : error.message;
     console.error(`❌ [WhiteBIT] Error ${method} ${requestPath}:`, errorMessage);
-    // Ném lỗi với thông báo từ sàn
     throw new Error(`WhiteBIT API Error: ${errorMessage}`);
   }
 }
@@ -101,6 +107,7 @@ function formatSymbolWB(symbol) {
    if (!symbol.endsWith('USDT')) {
       throw new Error(`[WhiteBIT] Invalid symbol format: ${symbol}. Must end with USDT.`);
    }
+   // WhiteBIT dùng ticker_id: BTC_PERP cho futures perpetual
    return symbol.replace('USDT', '_PERP');
 }
 
@@ -113,15 +120,17 @@ export const whitebitHandler = {
   async getPrice(symbol) {
     try {
       const tickerId = formatSymbolWB(symbol);
-      const { data } = await axios.get(`${BASE_URL}/api/v4/public/ticker`); // Lấy tất cả ticker
-      const marketData = data[tickerId];
+      // ✅ Lấy từ futures API vì ticker chỉ có spot
+      const info = await _getFuturesInfo();
+      const marketData = info.find(m => m.ticker_id === tickerId);
+      
       if (!marketData || !marketData.last_price) {
         throw new Error(`Không tìm thấy cặp giao dịch ${tickerId} trên WhiteBIT.`);
       }
       return parseFloat(marketData.last_price);
     } catch (error) {
-      console.error(`❌ [WhiteBIT] Error getPrice ${symbol}:`, error.response?.data || error.message);
-      throw new Error(`WhiteBIT API Error: ${error.response?.data || error.message}`);
+      console.error(`❌ [WhiteBIT] Error getPrice ${symbol}:`, error.message);
+      throw new Error(`WhiteBIT API Error: ${error.message}`);
     }
   },
 
@@ -129,46 +138,78 @@ export const whitebitHandler = {
   async getSymbolInfo(symbol) {
     const tickerId = formatSymbolWB(symbol);
     const info = await _getFuturesInfo();
-    const symbolInfo = info ? info[tickerId] : null;
+    // ✅ Tìm trong array dựa trên ticker_id
+    const symbolInfo = info.find(item => item.ticker_id === tickerId);
 
     if (!symbolInfo) {
       throw new Error(`[WhiteBIT] Symbol info not found for ${tickerId}`);
     }
-    // WhiteBIT dùng amount_step để xác định độ chính xác quantity
-    const step = parseFloat(symbolInfo.amount_step);
-    const precision = step > 0 ? (step.toString().split('.')[1] || '').length : 0;
-    // Đòn bẩy tối đa
-    const maxLeverage = parseFloat(symbolInfo.max_leverage);
+    
+    // WhiteBIT futures không có amount_step trong response, dùng giá trị mặc định
+    // Dựa vào stock_currency để xác định precision
+    const precision = symbolInfo.stock_currency === 'BTC' ? 3 : 2;
+    const maxLeverage = parseInt(symbolInfo.max_leverage) || 100;
 
     return {
       quantityPrecision: precision,
-      maxLeverage: maxLeverage || 20, // Fallback
+      maxLeverage: maxLeverage,
     };
   },
 
   // Cần API Key (Private)
   async getPNL(symbol) {
     const tickerId = formatSymbolWB(symbol);
-    const payload = { market: tickerId };
+    const payload = { 
+      market: tickerId,
+      request: '/api/v4/collateral-account/positions/open',
+      nonce: Date.now()
+    };
     try {
-      // Endpoint lấy vị thế theo market cụ thể
-      const positions = await _signedRequest('/api/v4/trade-account/positions', 'POST', payload);
+      // ✅ Endpoint đúng cho collateral/futures positions
+      const positions = await _signedRequest('/api/v4/collateral-account/positions/open', 'POST', payload);
+      
       // API trả về mảng, tìm vị thế khớp
-      const position = positions.find(p => p.market === tickerId);
+      const position = Array.isArray(positions) 
+        ? positions.find(p => p.market === tickerId) 
+        : null;
 
       return {
-        // WhiteBIT dùng 'unrealized_pnl'
-        pnl: position ? parseFloat(position.unrealized_pnl) : 0,
+        // WhiteBIT dùng 'pnl' cho unrealized PNL
+        pnl: position ? parseFloat(position.pnl) : 0,
         // WhiteBIT dùng 'amount' cho size
         size: position ? parseFloat(position.amount) : 0,
-        // WhiteBIT không trả về ROI trực tiếp, có thể tự tính nếu cần
-        // roi: position ? calculateROI(position) : 0
+        // WhiteBIT có pnlPercent
+        roi: position ? parseFloat(position.pnlPercent) : 0
       };
     } catch (error) {
        // Nếu lỗi là "position not found", trả về 0
-       if (error.message.toLowerCase().includes('position not found')) {
+       if (error.message.toLowerCase().includes('position not found') || 
+           error.message.toLowerCase().includes('no positions')) {
           console.log(`   ⓘ [WhiteBIT] No position found for ${tickerId}.`);
           return { pnl: 0, size: 0, roi: 0 };
+       }
+       // Nếu lỗi khác, ném lại lỗi
+       throw error;
+    }
+  },
+
+  // Cần API Key (Private)
+  async getAllPositions() {
+    try {
+      // ✅ Endpoint đúng, payload chỉ cần request và nonce
+      const payload = {
+        request: '/api/v4/collateral-account/positions/open',
+        nonce: Date.now()
+      };
+      const positions = await _signedRequest('/api/v4/collateral-account/positions/open', 'POST', payload);
+      // API trả về mảng rỗng nếu không có vị thế
+      return Array.isArray(positions) ? positions : [];
+    } catch (error) {
+       // Nếu lỗi là "position not found", trả về mảng rỗng
+       if (error.message.toLowerCase().includes('position not found') || 
+           error.message.toLowerCase().includes('no positions')) {
+          console.log(`   ⓘ [WhiteBIT] No open positions found.`);
+          return [];
        }
        // Nếu lỗi khác, ném lại lỗi
        throw error;
@@ -189,14 +230,14 @@ export const whitebitHandler = {
   async setLeverage(symbol, leverage) {
     const tickerId = formatSymbolWB(symbol);
     const payload = {
-      market: tickerId,
-      leverage: leverage.toString(),
+      leverage: leverage, // ✅ Gửi dạng số, không cần toString
+      request: '/api/v4/collateral-account/leverage',
+      nonce: Date.now()
     };
-    console.log(`   ⚡️ [WhiteBIT] Setting Leverage for ${tickerId} to ${leverage}x`);
-    // Endpoint để set leverage
-    await _signedRequest('/api/v4/trade-account/leverage', 'POST', payload);
-    // WhiteBIT không trả về gì nhiều khi thành công, chỉ cần không có lỗi là được
-    return { message: `Leverage set to ${leverage}x for ${tickerId}` };
+    console.log(`   ⚡️ [WhiteBIT] Setting Leverage for account to ${leverage}x`);
+    // ✅ Endpoint đúng - leverage áp dụng cho toàn bộ collateral account
+    const result = await _signedRequest('/api/v4/collateral-account/leverage', 'POST', payload);
+    return { message: `Leverage set to ${leverage}x for collateral account` };
   },
 
   // Cần API Key (Private)
@@ -206,13 +247,14 @@ export const whitebitHandler = {
       market: tickerId,
       side: side.toLowerCase(), // 'buy' hoặc 'sell'
       amount: quantity.toString(),
-      // WhiteBIT dùng endpoint riêng cho market order
+      request: '/api/v4/order/collateral/market',
+      nonce: Date.now()
     };
     console.log(`   🛒 [WhiteBIT] Placing MARKET ${side} order for ${quantity} ${tickerId}`);
-    // Endpoint để đặt lệnh market
+    // ✅ Endpoint đúng cho collateral/futures market order
     const data = await _signedRequest('/api/v4/order/collateral/market', 'POST', payload);
-    // Trả về ID lệnh nếu có (cấu trúc response cần kiểm tra lại)
-    return { orderId: data?.id || data?.orderId || 'N/A' };
+    // Trả về ID lệnh
+    return { orderId: data?.orderId || 'N/A' };
   },
 
   // Cần API Key (Private)
@@ -220,20 +262,18 @@ export const whitebitHandler = {
     const tickerId = formatSymbolWB(symbol);
     console.log(`   -> [WhiteBIT] Cancelling all open orders for ${tickerId}`);
     const payload = {
-      market: tickerId
+      market: tickerId,
+      type: ["Futures"], // ✅ Chỉ cancel futures orders
+      request: '/api/v4/order/cancel/all',
+      nonce: Date.now()
     };
     try {
-      // Endpoint để hủy tất cả lệnh theo market
-      // Lưu ý: Endpoint này có thể yêu cầu method DELETE hoặc POST tùy tài liệu
-      await _signedRequest('/api/v4/orders', 'DELETE', payload); // Giả sử là DELETE
+      // ✅ Endpoint đúng - POST method
+      await _signedRequest('/api/v4/order/cancel/all', 'POST', payload);
       console.log(`   ✅ [WhiteBIT] Successfully cancelled open orders for ${tickerId}.`);
     } catch (error) {
-       // Kiểm tra xem lỗi có phải là "không có lệnh" không, nếu có thì bỏ qua
-       // Cần xem mã lỗi cụ thể WhiteBIT trả về cho trường hợp này
-       // Ví dụ: if (error.message.includes('No orders found')) { ... }
+       // Bỏ qua nếu không có lệnh để cancel
        console.log(`   ⓘ [WhiteBIT] No open orders to cancel or already cancelled for ${tickerId}.`);
-       // Nếu lỗi khác, ném lại
-       // throw error;
     }
   },
 
@@ -243,10 +283,10 @@ export const whitebitHandler = {
     const tickerId = formatSymbolWB(symbol);
 
     // Bước 1: Hủy tất cả các lệnh đang mở (limit, stop...)
-    await this.cancelAllOpenOrders(tickerId); // Sử dụng tickerId đã format
+    await this.cancelAllOpenOrders(symbol);
 
     // Bước 2: Lấy thông tin vị thế hiện tại
-    const currentPositionInfo = await this.getPNL(symbol); // getPNL trả về { pnl, size }
+    const currentPositionInfo = await this.getPNL(symbol);
 
     if (!currentPositionInfo || currentPositionInfo.size === 0) {
       console.log(`   ✅ [WhiteBIT] No open position found for ${tickerId}.`);
@@ -254,15 +294,24 @@ export const whitebitHandler = {
     }
 
     const positionSize = currentPositionInfo.size;
-    // Xác định side để đóng: nếu size > 0 (Long) thì cần Sell, nếu size < 0 (Short) thì cần Buy
-    // WhiteBIT trả về size luôn dương, cần kiểm tra side của vị thế
-    // Ta cần gọi lại API positions để lấy side, hoặc lưu side khi mở lệnh
-    // Tạm giả định: Nếu getPNL trả về size != 0, ta lấy lại thông tin đầy đủ
+    
+    // Bước 3: Lấy lại thông tin đầy đủ để xác định side
     let positionSide = '';
     try {
-       const positions = await _signedRequest('/api/v4/trade-account/positions', 'POST', { market: tickerId });
-       const position = positions.find(p => p.market === tickerId);
-       if (position) positionSide = position.side; // 'long' or 'short'
+       const payload = {
+          market: tickerId,
+          request: '/api/v4/collateral-account/positions/open',
+          nonce: Date.now()
+       };
+       const positions = await _signedRequest('/api/v4/collateral-account/positions/open', 'POST', payload);
+       const position = Array.isArray(positions) 
+         ? positions.find(p => p.market === tickerId) 
+         : null;
+       
+       if (position) {
+          // ✅ Xác định side dựa trên amount: dương = long, âm = short
+          positionSide = parseFloat(position.amount) > 0 ? 'long' : 'short';
+       }
     } catch (e) {
        throw new Error(`[WhiteBIT] Could not determine position side for ${tickerId}: ${e.message}`);
     }
@@ -272,22 +321,20 @@ export const whitebitHandler = {
     }
 
     const closeSide = positionSide.toLowerCase() === 'long' ? 'sell' : 'buy';
-    const quantityToClose = Math.abs(positionSize); // Size luôn dương trên WhiteBIT
+    const quantityToClose = Math.abs(positionSize);
 
     console.log(`   -> [WhiteBIT] Closing ${quantityToClose} of ${tickerId} with side ${closeSide}`);
     
-    // Bước 3: Đặt lệnh Market ngược hướng để đóng vị thế
-    // WhiteBIT có thể có endpoint riêng để đóng vị thế hoặc dùng market order với cờ reduceOnly
-    // Giả sử dùng market order thông thường
+    // Bước 4: Đặt lệnh Market ngược hướng để đóng vị thế
     const payload = {
       market: tickerId,
       side: closeSide,
       amount: quantityToClose.toString(),
-      // WhiteBIT V4 dường như không có cờ 'reduceOnly' cho market order
-      // Cần đảm bảo không có lỗi logic nào khiến mở thêm vị thế mới
+      request: '/api/v4/order/collateral/market',
+      nonce: Date.now()
     };
     const data = await _signedRequest('/api/v4/order/collateral/market', 'POST', payload);
     console.log(`   ✅ [WhiteBIT] Close order placed for ${tickerId}.`);
-    return { orderId: data?.id || data?.orderId || 'N/A' };
+    return { orderId: data?.orderId || 'N/A' };
   }
 };
