@@ -136,6 +136,7 @@ export const binanceHandler = {
     return {
       pnl: position ? parseFloat(position.unRealizedProfit) : 0,
       size: position ? parseFloat(position.positionAmt) : 0,
+	  isolatedMargin: position ? parseFloat(position.isolatedMargin) : 0,
     };
   },
 

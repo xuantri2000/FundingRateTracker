@@ -128,11 +128,15 @@ export const bybitHandler = {
   async getPNL(symbol) {
     const queryString = `category=linear&symbol=${symbol}`;
     const data = await _signedRequest('/v5/position/list', 'GET', queryString);
-    const position = data.result.list.find(p => p.symbol === symbol && parseFloat(p.size) > 0);
+    // SỬA LỖI: Bỏ điều kiện `p.size > 0` để luôn lấy được thông tin vị thế,
+    // kể cả khi nó vừa bị đóng (size=0). Điều này rất quan trọng cho logic
+    // fail-safe và gỡ lỗ ở frontend.
+    const position = data.result.list.find(p => p.symbol === symbol);
     return {
       pnl: position ? parseFloat(position.unrealisedPnl) : 0,
       size: position ? parseFloat(position.size) : 0,
-    }; // Trả về 0 nếu không có vị thế
+	  isolatedMargin: position ? parseFloat(position.positionIM) : 0,
+    };
   },
 
   async setMarginType(symbol, marginType) {

@@ -157,6 +157,7 @@ const addToast = (message, type = 'info') => {
 const isTrackingPnl = ref(false)
 const pnlData = ref([])
 const successfulPositions = ref([])
+let lastPnlDataBeforeUpdate = []; // BIẾN MỚI: Lưu trữ PNL của lần fetch trước
 let pnlInterval = null
 const isAttemptingToClose = ref(false)
 
@@ -211,42 +212,25 @@ const startPnlTracking = (isHighFrequency = false) => {
   if (pnlInterval) clearInterval(pnlInterval)
   
   const fetchPnl = async () => {
-    if (successfulPositions.value.length < 2) return;
+    // Nếu đang trong chế độ gỡ lỗ, chỉ cần 1 vị thế
+    if (isRecoveringLoss.value && successfulPositions.value.length < 1) return;
+    // Nếu không trong chế độ gỡ lỗ, cần đủ 2 vị thế
+    if (!isRecoveringLoss.value && successfulPositions.value.length < 2) return;
 
     try {
       const { data } = await axios.post('/api/order/pnl', {
         symbol: symbol.value,
         positions: successfulPositions.value,
       })
+      // Lưu lại dữ liệu PNL hiện tại TRƯỚC KHI cập nhật pnlData.value
+      lastPnlDataBeforeUpdate = [...pnlData.value];
+
       const newPnlData = data.results.map(r => r.data)
       pnlData.value = newPnlData
 
       const currentTotalPnl = newPnlData.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
-      const totalInvestment = (longOrder.value?.amount || 0) + (shortOrder.value?.amount || 0);
 
-      // Tự động tăng tốc độ polling nếu lỗ nặng
-      // Ví dụ: nếu lỗ vượt quá 50% vốn, chuyển sang polling nhanh hơn
-    //   if (totalInvestment > 0 && currentTotalPnl < -0.5 * totalInvestment) {
-    //     // Nếu chưa ở chế độ polling nhanh, chuyển sang
-    //     if (!isHighFrequencyPolling.value) {
-    //       isHighFrequencyPolling.value = true;
-    //       startPnlTracking(); // Gọi lại để đặt lại interval
-    //     }
-    //   }
-
-      // --- LOGIC DỪNG LỖ (STOP-LOSS) ---
-      // Tính tổng vốn đầu tư ban đầu
-      // Đặt ngưỡng dừng lỗ là -95% tổng vốn
-      const stopLossThreshold = -0.95 * totalInvestment;
-
-      if (totalInvestment > 0 && currentTotalPnl <= stopLossThreshold) {
-        addToast(`Dừng lỗ tự động! Tổng PNL (${currentTotalPnl.toFixed(2)}) đã chạm ngưỡng ${stopLossThreshold.toFixed(2)} USDT.`, 'error');
-        forceClosePositions(); // Buộc đóng tất cả các vị thế
-        return; // Dừng xử lý thêm
-      }
-
-      // --- LOGIC GỠ LỖ KHI MỘT VỊ THẾ BỊ ĐÓNG ---
-      // Nếu đang trong chế độ gỡ lỗ, chỉ cần kiểm tra PNL của vị thế còn lại
+      // --- LOGIC GỠ LỖ KHI ĐANG Ở CHẾ ĐỘ GỠ LỖ ---
       if (isRecoveringLoss.value) {
         const remainingPosition = newPnlData[0];
         if (remainingPosition && remainingPosition.pnl >= recoveryTargetPnl.value) {
@@ -256,17 +240,68 @@ const startPnlTracking = (isHighFrequency = false) => {
         return; // Không xử lý các logic khác nữa
       }
 
-      // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý
+      // --- LOGIC DỪNG LỖ (STOP-LOSS) CHO TỪNG LỆNH ---
+      // Kiểm tra từng vị thế xem có lỗ quá 95% isolatedMargin không
+      for (const posData of newPnlData) {
+        const initialMargin = posData.isolatedMargin || 0;
+        if (initialMargin <= 0) continue; // Bỏ qua nếu không có thông tin margin
+        
+        const lossThreshold = -0.95 * initialMargin;
+        
+        if (posData.pnl <= lossThreshold) {
+          const exchangeName = exchangeNameMap.value[posData.exchange] || posData.exchange;
+          addToast(`Dừng lỗ tự động cho [${exchangeName}]! PNL (${posData.pnl.toFixed(2)}) đã chạm ngưỡng ${lossThreshold.toFixed(2)} USDT (-95% margin).`, 'error');
+          
+          // Đóng lệnh bị lỗ nặng này
+          const positionToClose = successfulPositions.value.find(p => p.exchange === posData.exchange);
+          if (positionToClose) {
+            try {
+              await forceClosePositions([positionToClose], false);
+              addToast(`Đã đóng lệnh [${exchangeName}] do dừng lỗ.`, 'warning');
+              
+              // Chuyển sang chế độ gỡ lỗ cho lệnh còn lại
+              const remainingPosition = newPnlData.find(p => p.exchange !== posData.exchange);
+              if (remainingPosition) {
+                isRecoveringLoss.value = true;
+                recoveryTargetPnl.value = -posData.pnl; // Mục tiêu là số dương của khoản lỗ
+                isAttemptingToClose.value = false;
+                
+                const remainingExchangeName = exchangeNameMap.value[remainingPosition.exchange] || remainingPosition.exchange;
+                addToast(`Chuyển sang chế độ gỡ lỗ cho [${remainingExchangeName}].`, 'info');
+                addToast(`Mục tiêu PNL mới: >= ${recoveryTargetPnl.value.toFixed(2)} USDT.`, 'info');
+                
+                // Cập nhật lại danh sách vị thế thành công
+                successfulPositions.value = successfulPositions.value.filter(p => p.exchange !== posData.exchange);
+                
+                startPnlTracking(true); // Tiếp tục polling nhanh
+              } else {
+                // Không còn lệnh nào, reset
+                reset();
+              }
+            } catch (error) {
+              console.error('Lỗi khi đóng lệnh dừng lỗ:', error);
+              addToast('Lỗi khi đóng lệnh dừng lỗ!', 'error');
+            }
+          }
+          return; // Dừng xử lý các logic khác
+        }
+      }
+
+      // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý bất ngờ
       if (newPnlData.length < 2 || newPnlData.some(p => p.size === 0)) {
         // Lấy dữ liệu PNL của lần gần nhất (khi còn đủ 2 vị thế)
-        const lastKnownPnl = pnlData.value;
-        const closedPosition = lastKnownPnl.find(p => !newPnlData.some(np => np.exchange === p.exchange));
+        const closedPosition = lastPnlDataBeforeUpdate.find(p => !newPnlData.some(np => np.exchange === p.exchange));
 
         // Nếu tìm thấy vị thế đã đóng và nó đang lỗ
         if (closedPosition && closedPosition.pnl < 0) {
           isRecoveringLoss.value = true;
           recoveryTargetPnl.value = -closedPosition.pnl; // Mục tiêu là số dương của khoản lỗ
           isAttemptingToClose.value = false; // Tắt chế độ săn PNL thông thường
+          
+          // Cập nhật lại danh sách vị thế thành công
+          successfulPositions.value = successfulPositions.value.filter(p => 
+            newPnlData.some(np => np.exchange === p.exchange)
+          );
           
           const remainingPos = newPnlData[0];
           const exchangeName = exchangeNameMap.value[remainingPos.exchange] || remainingPos.exchange;
@@ -290,8 +325,6 @@ const startPnlTracking = (isHighFrequency = false) => {
         // Kiểm tra điều kiện: Tổng PNL > 0
         if (currentTotalPnl > 0) {
           console.log(`✅ Điều kiện tổng PNL > 0 đã đạt (${currentTotalPnl.toFixed(4)})! Tự động đóng lệnh.`);
-          // Không hiển thị toast ở đây nữa.
-          // Chỉ gọi hàm đóng lệnh, hàm này sẽ tự xử lý toast thành công/thất bại.
           closeHedgedPositions();
         }
       }

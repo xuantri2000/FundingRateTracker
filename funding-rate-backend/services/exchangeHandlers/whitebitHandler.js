@@ -179,7 +179,8 @@ export const whitebitHandler = {
         // WhiteBIT dùng 'amount' cho size
         size: position ? parseFloat(position.amount) : 0,
         // WhiteBIT có pnlPercent
-        roi: position ? parseFloat(position.pnlPercent) : 0
+        roi: position ? parseFloat(position.pnlPercent) : 0,
+		isolatedMargin: position ? parseFloat(position.margin) : 0,
       };
     } catch (error) {
        // Nếu lỗi là "position not found", trả về 0
