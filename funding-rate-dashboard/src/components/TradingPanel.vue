@@ -6,6 +6,7 @@ const props = defineProps({
   modelValue: Object,
   side: String,
   exchanges: Array,
+  estimatedValue: Number, // ✅ Prop mới để nhận giá trị ước tính
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -71,12 +72,17 @@ watch(local, (val) => emit('update:modelValue', val), { deep: true })
 
     <!-- Số tiền -->
     <div>
-      <label class="block text-slate-400 text-sm mb-1">Số tiền (USDT)</label>
+      <div class="flex justify-between items-baseline mb-1">
+        <label class="text-slate-400 text-sm">Số lượng (2 chữ số thập phân)</label>
+        <div v-if="estimatedValue > 0" class="text-sm text-slate-400">
+          ≈ {{ estimatedValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }}
+        </div>
+      </div>
       <div class="relative">
         <input
           v-model.number="local.amount"
           type="number"
-          placeholder="100 USDT"
+          placeholder="100"
           class="w-full bg-slate-700 text-white rounded-lg p-2 pr-10 border border-slate-600 placeholder-slate-500 no-spinner"
         />
         <div class="absolute right-2 inset-y-0 flex flex-col items-center justify-center leading-none">

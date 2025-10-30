@@ -1,5 +1,6 @@
 import express from 'express';
 import { MODE, EXCHANGES, hasCredentials } from '../services/config.js';
+import exchangeHandlers from '../services/exchangeHandlers/index.js';
 
 const router = express.Router();
 
@@ -29,6 +30,31 @@ router.get('/', (req, res) => {
   } catch (error) {
     console.error('❌ Error fetching exchanges:', error);
     res.status(500).json({ error: 'Failed to fetch exchanges' });
+  }
+});
+
+// GET /api/exchange/price?exchange=...&symbol=... - Lấy giá của một cặp trên một sàn
+router.get('/price', async (req, res) => {
+  const { exchange, symbol } = req.query;
+
+  if (!exchange || !symbol) {
+    return res.status(400).json({ error: 'Exchange and symbol are required' });
+  }
+
+  const handler = exchangeHandlers[exchange];
+  if (!handler || !handler.getPrice) {
+    return res.status(404).json({ error: `Exchange '${exchange}' is not supported` });
+  }
+
+  try {
+    const price = await handler.getPrice(symbol);
+    res.json({ price });
+  } catch (error) {
+    console.error(`❌ Error fetching price for ${symbol} on ${exchange}:`, error.message);
+    res.status(500).json({ 
+      error: `Failed to fetch price for ${symbol} on ${exchange}`,
+      message: error.message
+    });
   }
 });
 

@@ -208,11 +208,11 @@ async function processOrder(symbol, order) {
 	const { exchange, side, leverage, amount } = order;
 
 	console.log(`------------------------ [${exchange.toUpperCase()}] ------------------------`);
-	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Amount: ${amount} USDT`);
+	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Quantity: ${amount}`);
 
 	// KIỂM TRA ĐẦU VÀO: amount và leverage phải là số hợp lệ và lớn hơn 0
 	if (typeof amount !== 'number' || amount <= 0 || typeof leverage !== 'number' || leverage <= 0) {
-		throw new Error('Số tiền (Amount) và Đòn bẩy (Leverage) phải là số và lớn hơn 0.');
+		throw new Error('Số lượng (Amount) và Đòn bẩy (Leverage) phải là số và lớn hơn 0.');
 	}
 
 	// Kiểm tra exchange có handler không
@@ -233,18 +233,16 @@ async function processOrder(symbol, order) {
 	}
 	await handler.closePosition(symbol);
 
-	// 1. Lấy giá hiện tại
-	const price = await handler.getPrice(symbol);
-	console.log(`   💰 Current price: $${price}`);
-
-	// 2. Lấy thông tin symbol và tính quantity
+	// 1. Lấy thông tin symbol
 	const symbolInfo = await handler.getSymbolInfo(symbol);
-	const quantity = calculateQuantity(amount, price, leverage, symbolInfo.quantityPrecision);
-	console.log(` [${exchange.toUpperCase()}] 📦 Quantity: ${quantity}`);
+
+	// 2. Sử dụng 'amount' trực tiếp làm 'quantity' và làm tròn đến 2 chữ số thập phân
+	const quantity = parseFloat(amount.toFixed(2));
+	console.log(`   📦 Quantity: ${quantity} (from input)`);
 
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	if (quantity <= 0) {
-		throw new Error(`Số tiền (Amount) quá nhỏ để giao dịch. Số lượng tính toán ra là 0.`);
+		throw new Error(`Số lượng (Amount) không hợp lệ. Số lượng phải lớn hơn 0.`);
 	}
 
 	// 3. SET MARGIN TYPE (BƯỚC MỚI)
@@ -266,22 +264,12 @@ async function processOrder(symbol, order) {
 	console.log(`   ✅ Order placed: ${result.orderId || 'OK'}`);
 
 	return {
-		price,
+		price: null, // Không còn tính toán giá ở bước này
 		quantity,
 		leverage,
 		orderId: result.orderId,
 		timestamp: new Date().toISOString()
 	};
 }
-
-	// Tính quantity dựa trên amount và giá
-	function calculateQuantity(amount, price, leverage, precision) {
-		// Quantity = (Amount * Leverage) / Price
-		const qty = (amount * leverage) / price;
-		// console.log(qty);
-		console.log(`   📐 Calculated Qty (raw): ${qty}, Precision: ${precision}`);
-		// Làm tròn đến độ chính xác được yêu cầu bởi sàn
-		return parseFloat(qty.toFixed(precision));
-	}
 
 export default router;

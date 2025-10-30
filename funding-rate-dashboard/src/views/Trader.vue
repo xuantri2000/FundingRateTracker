@@ -26,13 +26,13 @@
           <!-- Long Panel -->
           <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
             <h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
-            <TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges" :disabled="isTrackingPnl" />
+            <TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges" :disabled="isTrackingPnl" :estimated-value="longOrderValue" />
           </div>
 
           <!-- Short Panel -->
           <div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
             <h2 class="text-xl text-red-400 font-semibold mb-4">Lệnh Short (SELL)</h2>
-            <TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges" :disabled="isTrackingPnl" />
+            <TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges" :disabled="isTrackingPnl" :estimated-value="shortOrderValue" />
           </div>
         </div>
 
@@ -132,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import axios from 'axios'
 import TradingPanel from '@/components/TradingPanel.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
@@ -160,6 +160,13 @@ const successfulPositions = ref([])
 let pnlInterval = null
 const isAttemptingToClose = ref(false)
 
+// --- State mới cho giá trị USDT dự kiến ---
+const longOrderValue = ref(0);
+const shortOrderValue = ref(0);
+let longPriceInterval = null;
+let shortPriceInterval = null;
+
+
 // --- State mới cho logic gỡ lỗ ---
 const isRecoveringLoss = ref(false); // Cờ báo hiệu đang trong chế độ gỡ lỗ
 const recoveryTargetPnl = ref(0); // Mục tiêu PNL cần đạt để gỡ lỗ
@@ -176,6 +183,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pnlInterval) clearInterval(pnlInterval)
+  if (longPriceInterval) clearInterval(longPriceInterval);
+  if (shortPriceInterval) clearInterval(shortPriceInterval);
 })
 
 const exchangeNameMap = computed(() => {
@@ -449,4 +458,44 @@ function reset() {
   isRecoveringLoss.value = false; // Reset cờ gỡ lỗ
   recoveryTargetPnl.value = 0;
 }
+
+// --- LOGIC MỚI: THEO DÕI GIÁ TRỊ USDT DỰ KIẾN ---
+
+const createPriceWatcher = (orderRef, valueRef, debounceRef) => {
+  // Theo dõi sự thay đổi của symbol và order object
+  watch([symbol, orderRef], ([newSymbol, newOrder]) => {
+    // Xóa timeout cũ để debounce
+    if (debounceRef.value) {
+      clearTimeout(debounceRef.value);
+    }
+
+    // Nếu không đủ thông tin, reset ngay lập tức
+    if (!newOrder || !newOrder.exchange || !(newOrder.amount > 0) || !newSymbol) {
+      valueRef.value = 0;
+      return;
+    }
+
+    // Đặt timeout mới. API sẽ chỉ được gọi sau 500ms kể từ lần thay đổi cuối cùng.
+    debounceRef.value = setTimeout(async () => {
+      try {
+        const { data } = await axios.get('/api/exchange/price', {
+          params: {
+            exchange: newOrder.exchange,
+            symbol: newSymbol,
+          }
+        });
+        if (data.price) {
+          valueRef.value = data.price * newOrder.amount;
+        }
+      } catch (error) {
+        console.error(`Lỗi lấy giá cho ${newOrder.exchange}:`, error.message);
+        valueRef.value = 0; // Reset giá trị nếu có lỗi
+      }
+    }, 500); // Thời gian chờ debounce
+
+  }, { deep: true });
+};
+
+createPriceWatcher(longOrder, longOrderValue, { value: longPriceInterval });
+createPriceWatcher(shortOrder, shortOrderValue, { value: shortPriceInterval });
 </script>
