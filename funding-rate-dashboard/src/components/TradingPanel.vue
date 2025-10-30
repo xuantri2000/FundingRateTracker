@@ -19,7 +19,15 @@ const local = ref({
 })
 
 // Đồng bộ dữ liệu với cha
-watch(local, (val) => emit('update:modelValue', val), { deep: true })
+watch(local, (newVal) => emit('update:modelValue', newVal), { deep: true })
+
+// Đồng bộ dữ liệu từ cha xuống con khi prop thay đổi (ví dụ: khi loadState)
+watch(() => props.modelValue, (newVal) => {
+  // Chỉ cập nhật nếu giá trị thực sự khác nhau để tránh vòng lặp vô hạn
+  if (JSON.stringify(newVal) !== JSON.stringify(local.value)) {
+    local.value = { ...local.value, ...newVal };
+  }
+}, { deep: true });
 </script>
 
 <template>

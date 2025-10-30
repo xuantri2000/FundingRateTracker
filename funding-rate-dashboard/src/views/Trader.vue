@@ -172,6 +172,8 @@ let shortPriceInterval = null;
 const isRecoveringLoss = ref(false); // Cờ báo hiệu đang trong chế độ gỡ lỗ
 const recoveryTargetPnl = ref(0); // Mục tiêu PNL cần đạt để gỡ lỗ
 
+const STORAGE_KEY = 'traderState';
+
 onMounted(async () => {
   try {
     const { data } = await axios.get('/api/exchange')
@@ -180,6 +182,7 @@ onMounted(async () => {
     console.error('❌ Lỗi tải danh sách sàn:', err)
     addToast('Không thể tải danh sách sàn giao dịch.', 'error')
   }
+  loadState(); // Tải lại trạng thái khi component được mount
 })
 
 onUnmounted(() => {
@@ -446,6 +449,7 @@ async function closeHedgedPositions() {
     }).join(' | ');
     const finalMessage = `Đóng lệnh thành công! Tổng lời: ${data.totalPnl.toFixed(4)} USDT. Chi tiết: ${pnlSummary}`;
     
+    localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
     addToast(finalMessage, 'success');
     reset();
   } catch (err) {
@@ -472,6 +476,7 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
     });
     addToast(data.message, 'success');
     if (shouldReset) {
+      localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
       reset(); // Chỉ reset UI nếu được yêu cầu
     }
   } catch (err) {
@@ -490,6 +495,7 @@ function reset() {
   successfulPositions.value = []
   isRecoveringLoss.value = false; // Reset cờ gỡ lỗ
   recoveryTargetPnl.value = 0;
+  localStorage.removeItem(STORAGE_KEY); // Xóa state khi reset
 }
 
 // --- LOGIC MỚI: THEO DÕI GIÁ TRỊ USDT DỰ KIẾN ---
@@ -531,4 +537,47 @@ const createPriceWatcher = (orderRef, valueRef, debounceRef) => {
 
 createPriceWatcher(longOrder, longOrderValue, { value: longPriceInterval });
 createPriceWatcher(shortOrder, shortOrderValue, { value: shortPriceInterval });
+
+// --- LOGIC MỚI: LƯU VÀ TẢI TRẠNG THÁI TỪ LOCALSTORAGE ---
+
+const saveState = () => {
+  const state = {
+    symbol: symbol.value,
+    longOrder: longOrder.value,
+    shortOrder: shortOrder.value,
+    isTrackingPnl: isTrackingPnl.value,
+    successfulPositions: successfulPositions.value,
+    isRecoveringLoss: isRecoveringLoss.value,
+    recoveryTargetPnl: recoveryTargetPnl.value,
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+};
+
+const loadState = () => {
+  const savedState = localStorage.getItem(STORAGE_KEY);
+  if (savedState) {
+    try {
+      const state = JSON.parse(savedState);
+      symbol.value = state.symbol || 'BTCUSDT';
+      longOrder.value = state.longOrder || null;
+      shortOrder.value = state.shortOrder || null;
+      isTrackingPnl.value = state.isTrackingPnl || false;
+      successfulPositions.value = state.successfulPositions || [];
+      isRecoveringLoss.value = state.isRecoveringLoss || false;
+      recoveryTargetPnl.value = state.recoveryTargetPnl || 0;
+
+      if (isTrackingPnl.value && successfulPositions.value.length > 0) {
+        addToast('Đã khôi phục phiên giao dịch trước đó.', 'info');
+        startPnlTracking(); // Bắt đầu theo dõi lại PNL
+      }
+    } catch (e) {
+      console.error("Lỗi khi parse state từ localStorage:", e);
+      localStorage.removeItem(STORAGE_KEY); // Xóa state bị lỗi
+    }
+  }
+};
+
+// Theo dõi các thay đổi và lưu vào localStorage
+watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, isRecoveringLoss], saveState, { deep: true });
+
 </script>
