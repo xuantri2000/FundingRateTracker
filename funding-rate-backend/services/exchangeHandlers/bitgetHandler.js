@@ -187,8 +187,7 @@ export const bitgetHandler = {
 		console.log(`   -> [Bitget] Cancelling all open orders for ${symbol}`);
 		const payload = {
 			productType: PRODUCT_TYPE,
-			symbol,
-			marginCoin: 'USDT'
+			marginCoin: 'USDT' // Bitget API for cancel-all-orders works on productType, not symbol.
 		};
 		try {
 			await _signedRequest('/api/v2/mix/order/cancel-all-orders', 'POST', payload);
@@ -205,40 +204,46 @@ export const bitgetHandler = {
 	},
 
 	async closePosition(symbol) {
-		console.log(`   -> [Bitget] Starting full closure process for ${symbol}...`);
+		console.log(`   -> [Bitget] Starting flash close for ${symbol}...`);
+
+		// 1️⃣ Hủy hết lệnh chờ trước
 		await this.cancelAllOpenOrders(symbol);
 
+		// 2️⃣ Lấy thông tin vị thế hiện tại
 		const payload = { productType: PRODUCT_TYPE, symbol };
 		const data = await _signedRequest('/api/v2/mix/position/all-position', 'GET', payload);
-		const position = data.data.find(p => p.symbol === symbol && parseFloat(p.total) > 0);
 
+		const position = data.data.find(p => p.symbol === symbol && parseFloat(p.total) > 0);
 		if (!position) {
 			console.log(`   ✅ [Bitget] No open position found for ${symbol}.`);
 			return { message: `No open position for ${symbol}` };
 		}
 
-		const holdSide = position.holdSide?.toLowerCase();
+		const holdSide = position.holdSide?.toLowerCase(); // long hoặc short
 		const marginMode = position.marginMode?.toLowerCase() || 'isolated';
 		const closeSide = holdSide === 'long' ? 'sell' : 'buy';
 
-		console.log(`   -> [Bitget] Closing ${position.total} ${holdSide} of ${symbol} (${marginMode})`);
+		console.log(`   -> [Bitget] Flash closing ${position.total} ${holdSide} of ${symbol} (${marginMode})...`);
 
+		// 3️⃣ Gọi API flashClose
 		const closePayload = {
 			symbol,
 			productType: PRODUCT_TYPE,
 			marginCoin: 'USDT',
-			// ✅ Thêm tradeSide: 'close' để chỉ định đây là lệnh đóng vị thế
-			tradeSide: 'close',
 			side: closeSide, // 'sell' để đóng long, 'buy' để đóng short
-			marginMode,
-			orderType: 'market',
-			size: position.total.toString(),
+			holdSide,        // cần thiết: 'long' hoặc 'short'
 		};
 
-		const closeData = await _signedRequest('/api/v2/mix/order/place-order', 'POST', closePayload);
-		console.log(`   ✅ [Bitget] Closed position ${symbol}, orderId: ${closeData.data.orderId}`);
-		return { orderId: closeData.data.orderId };
+		try {
+			const closeData = await _signedRequest('/api/v2/mix/order/close-positions', 'POST', closePayload);
+			console.log(`   ✅ [Bitget] Flash closed ${symbol}, orderId: ${closeData.data?.orderId || 'N/A'}`);
+			return { orderId: closeData.data?.orderId };
+		} catch (err) {
+			console.error(`   ❌ [Bitget] Flash close failed for ${symbol}:`, err.message);
+			throw err;
+		}
 	}
+
 
 
 };
