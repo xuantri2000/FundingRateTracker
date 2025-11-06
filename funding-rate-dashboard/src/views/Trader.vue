@@ -110,10 +110,10 @@
 					</button>
 
 					<!-- Nút Quay lại -->
-					<button @click="reset" :disabled="isLoading"
+					<!-- <button @click="reset" :disabled="isLoading"
 						class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-all">
 						Quay lại
-					</button>
+					</button> -->
 				</div>
 			</div>
 		</div>
