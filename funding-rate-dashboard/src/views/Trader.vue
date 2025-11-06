@@ -384,11 +384,13 @@ async function placeOrders() {
       isTrackingPnl.value = true
       startPnlTracking()
     } else if (successCount === 1) {
-      await handlePartialOrderFailure();
+      const failedOrderInfo = payload.orders.find(o => !results.some(r => r.success && r.exchange === o.exchange));
+      await handlePartialOrderFailure(failedOrderInfo);
     } else {
       // Nếu không thành công cả 2, reset lại
       successfulPositions.value = []
     }
+    isLoading.value = false; // Di chuyển vào trong try block
 
   } catch (err) {
     console.error('❌ Lỗi đặt lệnh:', err)
@@ -398,24 +400,46 @@ async function placeOrders() {
   }
 }
 
-async function handlePartialOrderFailure() {
-  addToast('Một lệnh thất bại, đang tự động hủy lệnh còn lại...', 'warning');
-  
-  // Lấy thông tin từ mảng successfulPositions vừa được thêm vào
-  const successfulOrder = successfulPositions.value[0];
-  if (!successfulOrder) return;
+async function handlePartialOrderFailure(failedOrderInfo) {
+  const MAX_RETRIES = 2;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    addToast(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES} sau 1 giây...`, 'warning');
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Đợi 1 giây
 
-  const exchangeName = exchangeNameMap.value[successfulOrder.exchange] || successfulOrder.exchange;
+    try {
+      const retryPayload = {
+        symbol: symbol.value,
+        orders: [failedOrderInfo],
+      };
+      const { data } = await axios.post('/api/order/multi', retryPayload);
+      const retryResult = data.results[0];
 
-  try {
-    // Gọi API force-close mà không reset UI bên trong nó
-    await forceClosePositions([{ exchange: successfulOrder.exchange }], false);
-    addToast(`Lệnh trên sàn [${exchangeName}] đã được hủy thành công.`, 'success');
-  } catch (cancelErr) {
-    console.error('Lỗi nghiêm trọng: Không thể tự động hủy lệnh!', cancelErr);
-    addToast(`LỖI NGHIÊM TRỌNG: Không thể tự động hủy lệnh trên sàn [${exchangeName}]. Vui lòng kiểm tra thủ công!`, 'error');
+      if (retryResult.success) {
+        addToast(`[${retryResult.exchange}] Đặt lại lệnh ${retryResult.side} thành công!`, 'success');
+        successfulPositions.value.push({
+          exchange: retryResult.exchange,
+          side: retryResult.side,
+          quantity: retryResult.data.quantity,
+        });
+        isTrackingPnl.value = true;
+        startPnlTracking();
+        return; // Thoát khỏi hàm nếu thành công
+      }
+      // Nếu thất bại, vòng lặp sẽ tiếp tục cho lần thử tiếp theo
+    } catch (retryErr) {
+      console.error(`Lỗi khi thử đặt lại lệnh (lần ${attempt}):`, retryErr);
+      // Nếu có lỗi mạng, vòng lặp cũng sẽ tiếp tục
+    }
   }
-  reset(); // Reset UI sau khi tất cả các hành động đã hoàn tất
+
+  // Nếu tất cả các lần thử lại đều thất bại
+  addToast(`[${failedOrderInfo.exchange}] Đặt lại lệnh thất bại sau ${MAX_RETRIES} lần. Hủy lệnh đã thành công...`, 'error');
+  const successfulOrder = successfulPositions.value[0];
+  if (successfulOrder) {
+    await forceClosePositions([successfulOrder], false);
+    addToast(`Đã hủy lệnh trên sàn [${exchangeNameMap.value[successfulOrder.exchange] || successfulOrder.exchange}].`, 'info');
+  }
+  reset();
 }
 
 function startCloseAttempt() {

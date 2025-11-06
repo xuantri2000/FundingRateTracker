@@ -28,6 +28,15 @@ export const EXCHANGES = {
 		},
 		ws: {}
 	},
+	kucoin: {
+		name: 'KuCoin',
+		urls: {
+			// KuCoin Futures API
+			production: 'https://api-futures.kucoin.com',
+			testnet: 'https://api-futures.kucoin.com'
+		},
+		ws: {}
+	},
 	// THÊM BITGET
 	bitget: {
 		name: 'Bitget',
@@ -42,7 +51,7 @@ export const EXCHANGES = {
 
 /**
  * Lấy API key và Secret key cho một sàn
- * @param {string} exchangeId - 'binance', 'bybit', 'whitebit'
+ * @param {string} exchangeId - 'binance', 'bybit', 'whitebit', 'kucoin', 'bitget'
  * @returns {{apiKey: string, secretKey: string, passphrase?: string}}
  */
 export function getCredentials(exchangeId) {
@@ -50,19 +59,19 @@ export function getCredentials(exchangeId) {
 	return {
 		apiKey: process.env[`${prefix}_API_KEY`],
 		secretKey: process.env[`${prefix}_SECRET_KEY`],
-		passphrase: process.env[`${prefix}_PASSPHRASE`] || "" // Thêm passphrase cho Bitget
+		passphrase: process.env[`${prefix}_PASSPHRASE`] || "" // Thêm passphrase cho Bitget/KuCoin
 	};
 }
 
 /**
  * Kiểm tra xem sàn có đủ credentials không
- * @param {string} exchangeId - 'binance' hoặc 'bybit'
+ * @param {string} exchangeId - 'binance', 'bybit', 'kucoin', 'bitget'
  * @returns {boolean}
  */
 export function hasCredentials(exchangeId) {
 	const creds = getCredentials(exchangeId);
-	// Bitget yêu cầu thêm passphrase
-	if (exchangeId === 'bitget') {
+	// Bitget và KuCoin yêu cầu thêm passphrase
+	if (exchangeId === 'bitget' || exchangeId === 'kucoin') {
 		// Kiểm tra cả 3 giá trị: apiKey, secretKey, và passphrase
 		return !!(creds.apiKey && creds.secretKey && creds.passphrase);
 	}
