@@ -62,6 +62,7 @@
                   <th class="p-3 text-slate-400">Sàn</th>
                   <th class="p-3 text-slate-400">Lệnh</th>
                   <th class="p-3 text-slate-400 text-right">PNL (USDT)</th>
+                  <th class="p-3 text-slate-400 text-center">Trạng thái</th>
                 </tr>
               </thead>
               <tbody>
@@ -74,6 +75,11 @@
                   </td>
                   <td class="p-3 text-right font-mono" :class="getPnlClass(pos.pnl)">
                     {{ formatPnl(pos.pnl) }}
+                  </td>
+                  <td class="p-3 text-center">
+                    <span v-if="pos.isLiquidated" class="text-orange-400 font-bold" title="Vị thế đã bị đóng/thanh lý">
+                      🔥 Đã đóng
+                    </span>
                   </td>
                 </tr>
               </tbody>
@@ -90,23 +96,6 @@
         </div>
 
         <div class="flex justify-center gap-4">
-          <!-- Nút bắt đầu/dừng hủy lệnh -->
-          <button v-if="!isAttemptingToClose"
-                  @click="startCloseAttempt"
-                  :disabled="isLoading"
-                  class="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-orange-500/30 font-semibold transition-all disabled:opacity-50">
-            <span v-if="isLoading">Đang xử lý...</span>
-            <span v-else>Bắt đầu hủy lệnh</span>
-          </button>
-
-          <button v-else
-                  @click="stopCloseAttempt"
-                  :disabled="isLoading"
-                  class="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-xl shadow-lg shadow-yellow-500/30 font-semibold transition-all disabled:opacity-50 flex items-center gap-2">
-            <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            <span>Đang săn PNL... (Dừng)</span>
-          </button>
-
           <!-- Nút Buộc hủy lệnh -->
           <button
             @click="() => forceClosePositions()"
@@ -120,7 +109,7 @@
           <!-- Nút Quay lại -->
           <button
             @click="reset"
-            :disabled="isAttemptingToClose"
+            :disabled="isLoading"
             class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-all"
           >
             Quay lại
@@ -158,19 +147,13 @@ const isTrackingPnl = ref(false)
 const pnlData = ref([])
 const successfulPositions = ref([])
 let lastPnlDataBeforeUpdate = []; // BIẾN MỚI: Lưu trữ PNL của lần fetch trước
-let pnlInterval = null
-const isAttemptingToClose = ref(false)
+let pnlInterval = null;
 
 // --- State mới cho giá trị USDT dự kiến ---
 const longOrderValue = ref(0);
 const shortOrderValue = ref(0);
 let longPriceInterval = null;
 let shortPriceInterval = null;
-
-
-// --- State mới cho logic gỡ lỗ ---
-const isRecoveringLoss = ref(false); // Cờ báo hiệu đang trong chế độ gỡ lỗ
-const recoveryTargetPnl = ref(0); // Mục tiêu PNL cần đạt để gỡ lỗ
 
 const STORAGE_KEY = 'traderState';
 
@@ -211,124 +194,69 @@ const getPnlClass = (pnl) => {
   return pnl > 0 ? 'text-green-400' : pnl < 0 ? 'text-red-400' : 'text-slate-400'
 }
 
-const startPnlTracking = (isHighFrequency = false) => {
+const startPnlTracking = () => {
   if (pnlInterval) clearInterval(pnlInterval)
   
   const fetchPnl = async () => {
-    // Nếu đang trong chế độ gỡ lỗ, chỉ cần 1 vị thế
-    if (isRecoveringLoss.value && successfulPositions.value.length < 1) return;
-    // Nếu không trong chế độ gỡ lỗ, cần đủ 2 vị thế
-    if (!isRecoveringLoss.value && successfulPositions.value.length < 2) return;
+    // Chỉ fetch PNL cho các vị thế chưa bị đóng/thanh lý
+    const activePositions = successfulPositions.value.filter(p => {
+      const pnlEntry = pnlData.value.find(pd => pd.exchange === p.exchange);
+      return !pnlEntry || !pnlEntry.isLiquidated;
+    });
+
+    if (activePositions.length === 0) return; // Dừng nếu không còn vị thế nào
 
     try {
       const { data } = await axios.post('/api/order/pnl', {
         symbol: symbol.value,
-        positions: successfulPositions.value,
+        positions: activePositions,
       })
-      // Lưu lại dữ liệu PNL hiện tại TRƯỚC KHI cập nhật pnlData.value
+
       lastPnlDataBeforeUpdate = [...pnlData.value];
 
-      const newPnlData = data.results.map(r => r.data)
-      pnlData.value = newPnlData
-
-      const currentTotalPnl = newPnlData.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
-
-      // --- LOGIC GỠ LỖ KHI ĐANG Ở CHẾ ĐỘ GỠ LỖ ---
-      if (isRecoveringLoss.value) {
-        const remainingPosition = newPnlData[0];
-        if (remainingPosition && remainingPosition.pnl >= recoveryTargetPnl.value) {
-          addToast(`Gỡ lỗ thành công! PNL đạt ${remainingPosition.pnl.toFixed(2)} >= mục tiêu ${recoveryTargetPnl.value.toFixed(2)}. Đang đóng lệnh...`, 'success');
-          await forceClosePositions(); // Đóng nốt lệnh còn lại và reset
+      const newPnlData = data.results.map(r => {
+        if (r.success) {
+          return r.data;
         }
-        return; // Không xử lý các logic khác nữa
-      }
-
-      // --- LOGIC DỪNG LỖ (STOP-LOSS) CHO TỪNG LỆNH ---
-      // Kiểm tra từng vị thế xem có lỗ quá 95% isolatedMargin không
-      for (const posData of newPnlData) {
-        const initialMargin = posData.isolatedMargin || 0;
-        if (initialMargin <= 0) continue; // Bỏ qua nếu không có thông tin margin
-        
-        const lossThreshold = -0.95 * initialMargin;
-        
-        if (posData.pnl <= lossThreshold) {
-          const exchangeName = exchangeNameMap.value[posData.exchange] || posData.exchange;
-          addToast(`Dừng lỗ tự động cho [${exchangeName}]! PNL (${posData.pnl.toFixed(2)}) đã chạm ngưỡng ${lossThreshold.toFixed(2)} USDT (-95% margin).`, 'error');
-          
-          // Đóng lệnh bị lỗ nặng này
-          const positionToClose = successfulPositions.value.find(p => p.exchange === posData.exchange);
-          if (positionToClose) {
-            try {
-              await forceClosePositions([positionToClose], false);
-              addToast(`Đã đóng lệnh [${exchangeName}] do dừng lỗ.`, 'warning');
-              
-              // Chuyển sang chế độ gỡ lỗ cho lệnh còn lại
-              const remainingPosition = newPnlData.find(p => p.exchange !== posData.exchange);
-              if (remainingPosition) {
-                isRecoveringLoss.value = true;
-                recoveryTargetPnl.value = -posData.pnl; // Mục tiêu là số dương của khoản lỗ
-                isAttemptingToClose.value = false;
-                
-                const remainingExchangeName = exchangeNameMap.value[remainingPosition.exchange] || remainingPosition.exchange;
-                addToast(`Chuyển sang chế độ gỡ lỗ cho [${remainingExchangeName}].`, 'info');
-                addToast(`Mục tiêu PNL mới: >= ${recoveryTargetPnl.value.toFixed(2)} USDT.`, 'info');
-                
-                // Cập nhật lại danh sách vị thế thành công
-                successfulPositions.value = successfulPositions.value.filter(p => p.exchange !== posData.exchange);
-                
-                startPnlTracking(true); // Tiếp tục polling nhanh
-              } else {
-                // Không còn lệnh nào, reset
-                reset();
-              }
-            } catch (error) {
-              console.error('Lỗi khi đóng lệnh dừng lỗ:', error);
-              addToast('Lỗi khi đóng lệnh dừng lỗ!', 'error');
-            }
-          }
-          return; // Dừng xử lý các logic khác
+        // Nếu API getPNL thất bại cho một sàn, tìm PNL cũ và đánh dấu là thanh lý
+        // Giả sử lỗi trả về { message: '...', exchange: '...' }
+        const failedExchange = r.error?.exchange;
+        const oldPos = lastPnlDataBeforeUpdate.find(p => p.exchange === failedExchange);
+        if (oldPos) {
+          return { ...oldPos, isLiquidated: true, size: 0 };
         }
-      }
+        return null;
+      }).filter(Boolean);
+
+      // Cập nhật pnlData: giữ lại các lệnh đã đóng, cập nhật các lệnh đang hoạt động
+      pnlData.value = pnlData.value.map(oldPos => {
+        if (oldPos.isLiquidated) return oldPos; // Giữ nguyên lệnh đã đóng
+        const newPos = newPnlData.find(p => p.exchange === oldPos.exchange);
+        return newPos || oldPos; // Cập nhật nếu có dữ liệu mới, nếu không giữ lại
+      });
+
+      // Tính tổng PNL từ dữ liệu đã cập nhật (bao gồm cả PNL đã đóng băng)
+      const currentTotalPnl = pnlData.value.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
 
       // KIỂM TRA AN TOÀN: Nếu một vị thế bị đóng/thanh lý bất ngờ
-      if (newPnlData.length < 2 || newPnlData.some(p => p.size === 0)) {
-        // Lấy dữ liệu PNL của lần gần nhất (khi còn đủ 2 vị thế)
-        const closedPosition = lastPnlDataBeforeUpdate.find(p => !newPnlData.some(np => np.exchange === p.exchange));
+      // Tìm các vị thế vừa bị đóng trong lần fetch này
+      const justClosedPositions = newPnlData.filter(p => p.size === 0);
+      for (const closedPos of justClosedPositions) {
+        const pnlEntry = pnlData.value.find(p => p.exchange === closedPos.exchange);
+        // Chỉ xử lý nếu nó chưa được đánh dấu là đã đóng
+        if (pnlEntry && !pnlEntry.isLiquidated) {
+          const lastKnownPnl = lastPnlDataBeforeUpdate.find(p => p.exchange === closedPos.exchange)?.pnl || 0;
+          const exchangeName = exchangeNameMap.value[closedPos.exchange] || closedPos.exchange;
 
-        // Nếu tìm thấy vị thế đã đóng và nó đang lỗ
-        if (closedPosition && closedPosition.pnl < 0) {
-          isRecoveringLoss.value = true;
-          recoveryTargetPnl.value = -closedPosition.pnl; // Mục tiêu là số dương của khoản lỗ
-          isAttemptingToClose.value = false; // Tắt chế độ săn PNL thông thường
+          addToast(`Phát hiện vị thế [${exchangeName}] đã bị đóng. PNL được ghi nhận: ${lastKnownPnl.toFixed(2)} USDT.`, 'warning');
           
-          // Cập nhật lại danh sách vị thế thành công
-          successfulPositions.value = successfulPositions.value.filter(p => 
-            newPnlData.some(np => np.exchange === p.exchange)
-          );
-          
-          const remainingPos = newPnlData[0];
-          const exchangeName = exchangeNameMap.value[remainingPos.exchange] || remainingPos.exchange;
-
-          addToast(`Một vị thế đã đóng với lỗ ${closedPosition.pnl.toFixed(2)} USDT. Chuyển sang chế độ gỡ lỗ cho [${exchangeName}].`, 'warning');
-          addToast(`Mục tiêu PNL mới: >= ${recoveryTargetPnl.value.toFixed(2)} USDT.`, 'info');
-          
-          startPnlTracking(true); // Duy trì polling nhanh
-        } else {
-          // Nếu vị thế đóng không lỗ, hoặc không tìm thấy, thì đóng lệnh còn lại như cũ
-          addToast('Phát hiện một vị thế đã bị đóng! Đang buộc hủy lệnh còn lại...', 'error');
-          console.error('🚨 Fail-safe triggered: Một vị thế đã biến mất. Đóng lệnh còn lại.');
-          await forceClosePositions();
-        }
-        return; // Dừng xử lý các logic khác trong lần fetch này
-      }
-
-      // Nếu đang trong chế độ săn PNL, kiểm tra điều kiện đóng
-      // CẬP NHẬT LOGIC: Kiểm tra tổng PNL > 0
-      if (isAttemptingToClose.value) {
-        // Kiểm tra điều kiện: Tổng PNL > 0
-        if (currentTotalPnl > 0) {
-          console.log(`✅ Điều kiện tổng PNL > 0 đã đạt (${currentTotalPnl.toFixed(4)})! Tự động đóng lệnh.`);
-          closeHedgedPositions();
+          // Đóng băng PNL và đánh dấu là đã đóng
+          pnlData.value = pnlData.value.map(p => {
+            if (p.exchange === closedPos.exchange) {
+              return { ...p, pnl: lastKnownPnl, isLiquidated: true, size: 0 };
+            }
+            return p;
+          });
         }
       }
     } catch (error) {
@@ -337,7 +265,7 @@ const startPnlTracking = (isHighFrequency = false) => {
       clearInterval(pnlInterval)
     }
   }
-  const intervalTime = isHighFrequency ? 500 : 5000; // 500ms khi săn, 5s khi theo dõi
+  const intervalTime = 500; // Luôn poll nhanh khi đang theo dõi
   if (!pnlInterval) fetchPnl() // Fetch immediately on first run
   pnlInterval = setInterval(fetchPnl, intervalTime)
 }
@@ -360,6 +288,12 @@ async function placeOrders() {
 
     const { data } = await axios.post('/api/order/multi', payload)
     const results = data.results || []
+
+    // Khởi tạo pnlData với các vị thế thành công
+    pnlData.value = results
+      .filter(r => r.success)
+      .map(r => ({ exchange: r.exchange, side: r.side, pnl: 0, isLiquidated: false }));
+
 
     // Dọn dẹp mảng vị thế thành công trước khi xử lý kết quả mới
     successfulPositions.value = [];
@@ -422,7 +356,7 @@ async function handlePartialOrderFailure(failedOrderInfo) {
           quantity: retryResult.data.quantity,
         });
         isTrackingPnl.value = true;
-        startPnlTracking();
+        startPnlTracking(); // Bắt đầu polling nhanh
         return; // Thoát khỏi hàm nếu thành công
       }
       // Nếu thất bại, vòng lặp sẽ tiếp tục cho lần thử tiếp theo
@@ -442,21 +376,8 @@ async function handlePartialOrderFailure(failedOrderInfo) {
   reset();
 }
 
-function startCloseAttempt() {
-  isAttemptingToClose.value = true;
-  addToast('Bắt đầu săn PNL. Lệnh sẽ tự đóng khi cả 2 PNL > 0.', 'info');
-  startPnlTracking(true); // Bắt đầu polling tần suất cao
-}
-
-function stopCloseAttempt() {
-  isAttemptingToClose.value = false;
-  addToast('Đã dừng săn PNL.', 'warning');
-  startPnlTracking(false); // Quay lại polling tần suất thấp
-}
-
 async function closeHedgedPositions() {
-  // Dừng việc săn PNL để tránh gọi API nhiều lần
-  isAttemptingToClose.value = false;
+  // Dừng polling để tránh gọi API nhiều lần trong khi đang đóng lệnh
   if (pnlInterval) clearInterval(pnlInterval);
 
   isLoading.value = true
@@ -486,7 +407,6 @@ async function closeHedgedPositions() {
 
 async function forceClosePositions(positionsToClose = null, shouldReset = true) {
   // Dừng mọi hoạt động săn PNL hoặc polling PNL thông thường
-  isAttemptingToClose.value = false;
   if (pnlInterval) clearInterval(pnlInterval);
 
   isLoading.value = true;
@@ -513,12 +433,9 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
 
 function reset() {
   isTrackingPnl.value = false
-  isAttemptingToClose.value = false
   if (pnlInterval) clearInterval(pnlInterval)
   pnlData.value = []
   successfulPositions.value = []
-  isRecoveringLoss.value = false; // Reset cờ gỡ lỗ
-  recoveryTargetPnl.value = 0;
   localStorage.removeItem(STORAGE_KEY); // Xóa state khi reset
 }
 
@@ -571,8 +488,6 @@ const saveState = () => {
     shortOrder: shortOrder.value,
     isTrackingPnl: isTrackingPnl.value,
     successfulPositions: successfulPositions.value,
-    isRecoveringLoss: isRecoveringLoss.value,
-    recoveryTargetPnl: recoveryTargetPnl.value,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 };
@@ -587,11 +502,17 @@ const loadState = () => {
       shortOrder.value = state.shortOrder || null;
       isTrackingPnl.value = state.isTrackingPnl || false;
       successfulPositions.value = state.successfulPositions || [];
-      isRecoveringLoss.value = state.isRecoveringLoss || false;
-      recoveryTargetPnl.value = state.recoveryTargetPnl || 0;
 
       if (isTrackingPnl.value && successfulPositions.value.length > 0) {
         addToast('Đã khôi phục phiên giao dịch trước đó.', 'info');
+
+        // KHỞI TẠO pnlData để UI hiển thị ngay lập tức
+        pnlData.value = successfulPositions.value.map(pos => ({
+          ...pos,
+          pnl: null, // PNL ban đầu là null (hiển thị 'Đang tải...')
+          isLiquidated: false,
+        }));
+
         startPnlTracking(); // Bắt đầu theo dõi lại PNL
       }
     } catch (e) {
@@ -602,6 +523,6 @@ const loadState = () => {
 };
 
 // Theo dõi các thay đổi và lưu vào localStorage
-watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, isRecoveringLoss], saveState, { deep: true });
+watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions], saveState, { deep: true });
 
 </script>
