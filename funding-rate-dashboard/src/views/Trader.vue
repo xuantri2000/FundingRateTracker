@@ -171,6 +171,7 @@ onMounted(async () => {
 		exchanges.value = data
 	} catch (err) {
 		console.error('❌ Lỗi tải danh sách sàn:', err)
+		addToast('Không thể tải danh sách sàn giao dịch.', 'error')
 		addLog('Không thể tải danh sách sàn giao dịch.', 'error')
 	}
 	loadState(); // Tải lại trạng thái khi component được mount
@@ -270,6 +271,7 @@ const startPnlTracking = () => {
 			}
 		} catch (error) {
 			console.error('Lỗi fetch PNL:', error)
+			addToast('Lỗi khi cập nhật PNL.', 'error')
 			addLog('Lỗi khi cập nhật PNL.', 'error')
 			clearInterval(pnlInterval)
 		}
@@ -281,6 +283,7 @@ const startPnlTracking = () => {
 
 async function placeOrders() {
 	if (!symbol.value || !longOrder.value || !shortOrder.value) {
+		addToast('Vui lòng nhập đủ thông tin cho cả hai lệnh!', 'warning')
 		addLog('Vui lòng nhập đủ thông tin cho cả hai lệnh!', 'warning')
 		return
 	}
@@ -311,7 +314,9 @@ async function placeOrders() {
 		results.forEach(r => {
 			if (r.success) {
 				successCount++;
-				addLog(`[${r.exchange}] Lệnh ${r.side} đã được đặt thành công!`, 'success')
+				const successMsg = `[${r.exchange}] Lệnh ${r.side} đã được đặt thành công!`;
+				addToast(successMsg, 'success');
+				addLog(successMsg, 'success')
 				// Lưu lại thông tin cần thiết để đóng lệnh và lấy PNL
 				successfulPositions.value.push({
 					exchange: r.exchange,
@@ -319,6 +324,7 @@ async function placeOrders() {
 					quantity: r.data.quantity,
 				})
 			} else {
+				addToast(`[${r.exchange}] Lệnh ${r.side} thất bại: ${r.error}`, 'error')
 				addLog(`[${r.exchange}] Lệnh ${r.side} thất bại: ${r.error}`, 'error')
 			}
 		})
@@ -337,6 +343,7 @@ async function placeOrders() {
 
 	} catch (err) {
 		console.error('❌ Lỗi đặt lệnh:', err)
+		addToast(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
 		addLog(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
 	} finally {
 		isLoading.value = false
@@ -346,6 +353,7 @@ async function placeOrders() {
 async function handlePartialOrderFailure(failedOrderInfo) {
 	const MAX_RETRIES = 2;
 	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+		addToast(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES}...`, 'warning');
 		addLog(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES} sau 1 giây...`, 'warning');
 		await new Promise(resolve => setTimeout(resolve, 1000)); // Đợi 1 giây
 
@@ -358,7 +366,9 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 			const retryResult = data.results[0];
 
 			if (retryResult.success) {
-				addLog(`[${retryResult.exchange}] Đặt lại lệnh ${retryResult.side} thành công!`, 'success');
+				const successMsg = `[${retryResult.exchange}] Đặt lại lệnh ${retryResult.side} thành công!`;
+				addToast(successMsg, 'success');
+				addLog(successMsg, 'success');
 				successfulPositions.value.push({
 					exchange: retryResult.exchange,
 					side: retryResult.side,
@@ -376,6 +386,7 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 	}
 
 	// Nếu tất cả các lần thử lại đều thất bại
+	addToast(`Đặt lại lệnh thất bại. Hủy lệnh đã thành công...`, 'error');
 	addLog(`[${failedOrderInfo.exchange}] Đặt lại lệnh thất bại sau ${MAX_RETRIES} lần. Hủy lệnh đã thành công...`, 'error');
 	const successfulOrder = successfulPositions.value[0];
 	if (successfulOrder) {
@@ -403,12 +414,14 @@ async function closeHedgedPositions() {
 		}).join(' | ');
 		const finalMessage = `Đóng lệnh thành công! Tổng lời: ${data.totalPnl.toFixed(4)} USDT. Chi tiết: ${pnlSummary}`;
 
+		addToast(finalMessage, 'success');
 		addLog(finalMessage, 'success');
 		localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
 		// Không gọi reset() ngay để người dùng thấy log cuối cùng
 		reset(false); // Chỉ reset state, không xóa log
 	} catch (err) {
 		console.error('Lỗi đóng lệnh:', err)
+		addToast(err.response?.data?.message || 'Không thể đóng lệnh.', 'error')
 		addLog(err.response?.data?.message || 'Không thể đóng lệnh.', 'error')
 	} finally {
 		isLoading.value = false
@@ -429,12 +442,14 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
 			positions: targetPositions, // Cần gửi thông tin các sàn để đóng
 		});
 		if (shouldReset) {
+			addToast(data.message, 'success');
 			addLog(data.message, 'success');
 			localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
 			reset(false); // Chỉ reset state, không xóa log
 		}
 	} catch (err) {
 		console.error('Lỗi buộc hủy lệnh:', err);
+		addToast(err.response?.data?.message || 'Buộc hủy lệnh thất bại.', 'error');
 		addLog(err.response?.data?.message || 'Buộc hủy lệnh thất bại.', 'error');
 	} finally {
 		isLoading.value = false;
