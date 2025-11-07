@@ -117,7 +117,8 @@ export const gateioHandler = {
 		}
 		return {
 			quantityPrecision: 0,
-			maxLeverage: parseFloat(symbolInfo.leverage_max),
+			maxLeverage: parseFloat(symbolInfo.leverage_max) || 100, // Thêm fallback
+			quantoMultiplier: parseFloat(symbolInfo.quanto_multiplier),
 		};
 	},
 

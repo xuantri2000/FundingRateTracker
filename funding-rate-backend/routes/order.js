@@ -272,10 +272,16 @@ async function processOrder(symbol, order) {
 	// 1. Lấy thông tin symbol
 	const symbolInfo = await handler.getSymbolInfo(symbol);
 
-	// 2. Sử dụng 'amount' trực tiếp làm 'quantity' và làm tròn
-	const quantity = parseFloat(amount.toFixed(6));
-	console.log(`   📦 Quantity: ${quantity} (from input)`);
+	// 2. Tính toán quantity
+	let quantity = parseFloat(amount.toFixed(6)); // Mặc định quantity là amount (số lượng base asset)
 
+	// ✨ Xử lý đặc biệt cho Gate.io: Chuyển đổi amount (USDT) sang số lượng hợp đồng
+	if (exchange === 'gateio' && symbolInfo.quantoMultiplier) {
+		console.log(`    Gate.io: Converting amount to contract size...`);
+		// Số lượng hợp đồng = Số lượng base asset / Kích thước 1 hợp đồng (quantoMultiplier)
+		quantity = amount / symbolInfo.quantoMultiplier;
+		console.log(`   Gate.io: Amount ${amount} (base asset) ≈ ${quantity.toFixed(2)} contracts (Multiplier: ${symbolInfo.quantoMultiplier})`);
+	}
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	// if (quantity <= 0) {
 	// 	throw new Error(`Số lượng (Amount) không hợp lệ. Số lượng phải lớn hơn 0.`);
