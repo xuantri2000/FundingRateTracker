@@ -46,12 +46,20 @@ export const EXCHANGES = {
 			testnet: 'https://api.bitget.com'
 		},
 		ws: {}
+	},
+	gateio: {
+		name: 'Gate.io',
+		urls: {
+			production: 'https://api.gateio.ws',
+			testnet: 'https://api-testnet.gateapi.io' // Gate.io có testnet
+		},
+		ws: {}
 	}
 };
 
 /**
  * Lấy API key và Secret key cho một sàn
- * @param {string} exchangeId - 'binance', 'bybit', 'whitebit', 'kucoin', 'bitget'
+ * @param {string} exchangeId - 'binance', 'bybit', 'whitebit', 'kucoin', 'bitget', 'gateio'
  * @returns {{apiKey: string, secretKey: string, passphrase?: string}}
  */
 export function getCredentials(exchangeId) {
@@ -65,7 +73,7 @@ export function getCredentials(exchangeId) {
 
 /**
  * Kiểm tra xem sàn có đủ credentials không
- * @param {string} exchangeId - 'binance', 'bybit', 'kucoin', 'bitget'
+ * @param {string} exchangeId - 'binance', 'bybit', 'kucoin', 'bitget', 'gateio'
  * @returns {boolean}
  */
 export function hasCredentials(exchangeId) {
