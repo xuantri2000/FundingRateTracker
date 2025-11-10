@@ -493,7 +493,8 @@ const createPriceWatcher = (orderRef, valueRef, debounceRef) => {
 					valueRef.value = data.price * newOrder.amount;
 				}
 			} catch (error) {
-				console.error(`Lỗi lấy giá cho ${newOrder.exchange}:`, error.message);
+				addToast(error.response?.data?.error || 'Lấy giá symbol thất bại.', 'error');
+				addLog(error.response?.data?.error || 'Lấy giá symbol thất bại.', 'error');
 				valueRef.value = 0; // Reset giá trị nếu có lỗi
 			}
 		}, 500); // Thời gian chờ debounce

@@ -54,6 +54,15 @@ export const EXCHANGES = {
 			testnet: 'https://api-testnet.gateapi.io' // Gate.io có testnet
 		},
 		ws: {}
+	},
+	mexc: {
+		name: 'MEXC',
+		urls: {
+			// MEXC Futures API
+			production: 'https://contract.mexc.com',
+			testnet: 'https://contract.mexc.com'
+		},
+		ws: {}
 	}
 };
 

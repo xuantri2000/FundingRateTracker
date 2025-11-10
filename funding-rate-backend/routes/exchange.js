@@ -52,7 +52,7 @@ router.get('/price', async (req, res) => {
   } catch (error) {
     console.error(`❌ Error fetching price for ${symbol} on ${exchange}:`, error.message);
     res.status(500).json({ 
-      error: `Failed to fetch price for ${symbol} on ${exchange}`,
+      error: `Không tồn tại cặp giao dịch ${symbol} trên sàn ${exchange}`,
       message: error.message
     });
   }
