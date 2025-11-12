@@ -47,6 +47,15 @@ export const EXCHANGES = {
 		},
 		ws: {}
 	},
+	// THÊM HTX
+	htx: {
+		name: 'HTX',
+		urls: {
+			production: 'https://api.hbdm.com',
+			testnet: 'https://api.hbdm.com' // HTX dùng chung URL, phân biệt qua API key
+		},
+		ws: {}
+	},
 	gateio: {
 		name: 'Gate.io',
 		urls: {
@@ -55,21 +64,21 @@ export const EXCHANGES = {
 		},
 		ws: {}
 	},
-	mexc: {
-		name: 'MEXC',
-		urls: {
-			// MEXC Futures API
-			production: 'https://contract.mexc.com',
-			testnet: 'https://contract.mexc.com'
-		},
-		ws: {}
-	}
+	// mexc: {
+	// 	name: 'MEXC',
+	// 	urls: {
+	// 		// MEXC Futures API
+	// 		production: 'https://contract.mexc.com',
+	// 		testnet: 'https://contract.mexc.com'
+	// 	},
+	// 	ws: {}
+	// }
 };
 
 /**
  * Lấy API key và Secret key cho một sàn
  * @param {string} exchangeId - 'binance', 'bybit', 'whitebit', 'kucoin', 'bitget', 'gateio'
- * @returns {{apiKey: string, secretKey: string, passphrase?: string}}
+ * @returns {{apiKey: string, secretKey: string, passphrase?: string, subAccount?: string}}
  */
 export function getCredentials(exchangeId) {
 	const prefix = exchangeId.toUpperCase();
@@ -77,12 +86,13 @@ export function getCredentials(exchangeId) {
 		apiKey: process.env[`${prefix}_API_KEY`],
 		secretKey: process.env[`${prefix}_SECRET_KEY`],
 		passphrase: process.env[`${prefix}_PASSPHRASE`] || "" // Thêm passphrase cho Bitget/KuCoin
-	};
+	}
+	// HTX không cần passphrase
 }
 
 /**
  * Kiểm tra xem sàn có đủ credentials không
- * @param {string} exchangeId - 'binance', 'bybit', 'kucoin', 'bitget', 'gateio'
+ * @param {string} exchangeId - 'binance', 'bybit', 'kucoin', 'bitget', 'gateio', 'htx'
  * @returns {boolean}
  */
 export function hasCredentials(exchangeId) {

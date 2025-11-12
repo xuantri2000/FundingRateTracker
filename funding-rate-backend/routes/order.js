@@ -282,6 +282,15 @@ async function processOrder(symbol, order) {
 		quantity = amount / symbolInfo.quantoMultiplier;
 		console.log(`   Gate.io: Amount ${amount} (base asset) ≈ ${quantity.toFixed(2)} contracts (Multiplier: ${symbolInfo.quantoMultiplier})`);
 	}
+	// ✨ Xử lý đặc biệt cho HTX: Chuyển đổi amount (base asset) sang số lượng hợp đồng
+	if (exchange === 'htx' && symbolInfo.contractSize) {
+		console.log(`    HTX: Converting amount to contract size...`);
+		// Số lượng hợp đồng = Số lượng base asset / Kích thước 1 hợp đồng (contractSize)
+		quantity = amount / symbolInfo.contractSize;
+		// HTX yêu cầu số lượng là số nguyên
+		quantity = Math.round(quantity);
+		console.log(`   HTX: Amount ${amount} (base asset) ≈ ${quantity} contracts (Contract Size: ${symbolInfo.contractSize})`);
+	}
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	// if (quantity <= 0) {
 	// 	throw new Error(`Số lượng (Amount) không hợp lệ. Số lượng phải lớn hơn 0.`);
