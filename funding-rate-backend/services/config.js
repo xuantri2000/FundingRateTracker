@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-export const MODE = process.env.TRADING_MODE || 'testnet';
+export const MODE = process.env.ENVIRONMENT || 'testnet';
 
 // Cấu hình tập trung cho tất cả các sàn
 export const EXCHANGES = {
@@ -59,7 +59,7 @@ export const EXCHANGES = {
 	gateio: {
 		name: 'Gate.io',
 		urls: {
-			production: 'https://api.gateio.ws',
+			production: 'https://fx-api.gateio.ws',
 			testnet: 'https://api-testnet.gateapi.io' // Gate.io có testnet
 		},
 		ws: {}

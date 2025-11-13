@@ -33,7 +33,7 @@ async function _getContractsInfo() {
  */
 async function _signedRequest(endpoint, method = 'GET', queryParams = {}, bodyParams = null) {
 	const credentials = getCredentials('gateio');
-	const timestamp = (Date.now() / 1000).toString();
+	const timestamp = Math.floor(Date.now() / 1000).toString();
 	const methodUpper = method.toUpperCase();
 
 	// Query string

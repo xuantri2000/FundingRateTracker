@@ -15,7 +15,7 @@ app.use('/api/order', orderRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  const MODE = process.env.TRADING_MODE || 'testnet';
+  const MODE = process.env.ENVIRONMENT || 'testnet';
   res.json({ 
     status: 'ok', 
     mode: MODE,
@@ -26,5 +26,5 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Trading mode: ${process.env.TRADING_MODE || 'testnet'}`);
+  console.log(`📊 Trading mode: ${process.env.ENVIRONMENT || 'testnet'}`);
 });
