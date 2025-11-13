@@ -281,6 +281,10 @@ async function processOrder(symbol, order) {
 		// Số lượng hợp đồng = Số lượng base asset / Kích thước 1 hợp đồng (quantoMultiplier)
 		quantity = amount / symbolInfo.quantoMultiplier;
 		console.log(`   Gate.io: Amount ${amount} (base asset) ≈ ${quantity.toFixed(2)} contracts (Multiplier: ${symbolInfo.quantoMultiplier})`);
+
+		if(quantity <= 0) {
+			throw new Error(`Gate.io: Số lượng tối thiểu phải là ${symbolInfo.quantoMultiplier}.`);
+		}
 	}
 	// ✨ Xử lý đặc biệt cho HTX: Chuyển đổi amount (base asset) sang số lượng hợp đồng
 	if (exchange === 'htx' && symbolInfo.contractSize) {
@@ -290,6 +294,22 @@ async function processOrder(symbol, order) {
 		// HTX yêu cầu số lượng là số nguyên
 		quantity = Math.round(quantity);
 		console.log(`   HTX: Amount ${amount} (base asset) ≈ ${quantity} contracts (Contract Size: ${symbolInfo.contractSize})`);
+
+		if(quantity <= 0) {
+			throw new Error(`HTX: Số lượng tối thiểu phải là ${symbolInfo.contractSize}.`);
+		}
+	}
+	// ✨ Xử lý đặc biệt cho KuCoin: Chuyển đổi amount (base asset) sang số lượng hợp đồng
+	if (exchange === 'kucoin' && symbolInfo.multiplier) {
+		console.log(`    KuCoin: Converting amount to contract size...`);
+		// Số lượng hợp đồng = Số lượng base asset / Kích thước 1 hợp đồng (multiplier)
+		quantity = amount / symbolInfo.multiplier;
+		quantity = Math.round(quantity); // KuCoin yêu cầu số lượng là số nguyên
+		console.log(`   KuCoin: Amount ${amount} (base asset) ≈ ${quantity} contracts (Multiplier: ${symbolInfo.multiplier})`);
+
+		if(quantity <= 0) {
+			throw new Error(`KuCoin: Số lượng tối thiểu phải là ${symbolInfo.multiplier}.`);
+		}
 	}
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	// if (quantity <= 0) {
@@ -304,13 +324,16 @@ async function processOrder(symbol, order) {
 	if (leverage > symbolInfo.maxLeverage) {
 		throw new Error(`Đòn bẩy ${leverage}x vượt quá mức tối đa cho phép của sàn là ${symbolInfo.maxLeverage}x cho cặp ${symbol}.`);
 	}
-
+	
 	// 4. Set leverage
-	await handler.setLeverage(symbol, leverage);
-	console.log(`   ⚡ Leverage set: ${leverage}x`);
+	// KuCoin gửi leverage cùng với lệnh, không cần set riêng
+	if (exchange !== 'kucoin') {
+		await handler.setLeverage(symbol, leverage);
+		console.log(`   ⚡ Leverage set: ${leverage}x`);
+	}
 
 	// 5. Place order
-	const result = await handler.placeOrder(symbol, side, quantity);
+	const result = await handler.placeOrder(symbol, side, quantity, leverage);
 	console.log(`   ✅ Order placed: ${result.orderId || 'OK'}`);
 
 	return {

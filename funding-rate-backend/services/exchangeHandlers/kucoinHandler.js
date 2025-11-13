@@ -47,19 +47,25 @@ async function _signedRequest(endpoint, method = 'GET', payload = {}) {
 		body = JSON.stringify(payload);
 	}
 
+	// ✅ Sign string
 	const strForSign = `${timestamp}${methodUpper}${endpoint}${queryString}${body}`;
-
 	const signature = crypto
 		.createHmac('sha256', credentials.secretKey)
 		.update(strForSign)
+		.digest('base64');
+
+	// ✅ Encode passphrase
+	const passphrase = crypto
+		.createHmac('sha256', credentials.secretKey)
+		.update(credentials.passphrase)
 		.digest('base64');
 
 	const headers = {
 		'KC-API-KEY': credentials.apiKey,
 		'KC-API-SIGN': signature,
 		'KC-API-TIMESTAMP': timestamp,
-		'KC-API-PASSPHRASE': credentials.passphrase,
-		'KC-API-KEY-VERSION': '2',
+		'KC-API-PASSPHRASE': passphrase,
+		'KC-API-KEY-VERSION': '3',
 		'Content-Type': 'application/json',
 	};
 
@@ -70,11 +76,10 @@ async function _signedRequest(endpoint, method = 'GET', payload = {}) {
 			url,
 			method: methodUpper,
 			headers,
-			data: body ? payload : undefined,
+			data: body || undefined,
 		});
-
 		if (response.data.code !== '200000') {
-			throw new Error(response.data.message || 'KuCoin API Error');
+			throw new Error(response.data.msg || 'KuCoin API Error');
 		}
 		return response.data;
 	} catch (error) {
@@ -84,14 +89,20 @@ async function _signedRequest(endpoint, method = 'GET', payload = {}) {
 	}
 }
 
+function formatSymbol(symbol) {
+	// KuCoin Futures Perpetual symbols end with 'USDTM'
+	return symbol.endsWith('USDTM') ? symbol : `${symbol}M`;
+}
+
 // ============================================
 // KUCOIN HANDLER
 // ============================================
 export const kucoinHandler = {
 
 	async getPrice(symbol) {
+		const contract = formatSymbol(symbol);
 		try {
-			const { data } = await axios.get(`${BASE_URL}/api/v1/ticker?symbol=${symbol}`);
+			const { data } = await axios.get(`${BASE_URL}/api/v1/ticker?symbol=${contract}`);
 			if (data.code !== '200000' || !data.data) {
 				throw new Error(data.message || `Không tìm thấy cặp giao dịch ${symbol} trên KuCoin.`);
 			}
@@ -103,10 +114,11 @@ export const kucoinHandler = {
 	},
 
 	async getSymbolInfo(symbol) {
+		const contract = formatSymbol(symbol);
 		const info = await _getContractsInfo();
-		const symbolInfo = info.find(i => i.symbol === symbol);
+		const symbolInfo = info.find(i => i.symbol === contract);
 		if (!symbolInfo) {
-			throw new Error(`[KuCoin] Symbol info not found for ${symbol}`);
+			throw new Error(`[KuCoin] Symbol info not found for ${contract}`);
 		}
 
 		// KuCoin dùng lotSize để xác định số lượng tối thiểu, không có precision rõ ràng.
@@ -117,13 +129,18 @@ export const kucoinHandler = {
 		return {
 			quantityPrecision: precision,
 			maxLeverage: parseInt(symbolInfo.maxLeverage, 10),
+			multiplier: multiplier, // ✅ Trả về multiplier để tính toán số lượng hợp đồng
 		};
 	},
 
 	async getPNL(symbol) {
+		const contract = formatSymbol(symbol);
 		try {
-			const data = await _signedRequest(`/api/v1/positions/${symbol}`, 'GET');
-			const position = data.data;
+			// Sử dụng endpoint tối ưu hơn để lấy một vị thế duy nhất
+			const data = await _signedRequest(`/api/v2/position`, 'GET', {
+				symbol: contract,
+			});
+			const position = data.data[0]; 
 			return {
 				pnl: position ? parseFloat(position.unrealisedPnl) : 0,
 				size: position ? parseFloat(position.currentQty) : 0,
@@ -140,24 +157,35 @@ export const kucoinHandler = {
 
 	// KuCoin không có API để set margin type riêng lẻ, nó được quản lý ở cấp độ tài khoản (cross/isolated)
 	async setMarginType(symbol, marginType) {
-		console.log(`   ⓘ [KuCoin] Margin type is managed at the account level. Please set it in your KuCoin account settings. Skipping for ${symbol}.`);
-		return;
+		const contract = formatSymbol(symbol);
+		try {
+			// Sử dụng endpoint tối ưu hơn để lấy một vị thế duy nhất
+			const data = await _signedRequest(`/api/v2/position/changeMarginMode`, 'POST', {
+				symbol: contract,
+				marginMode: "ISOLATED"
+			});
+			return data.data
+		} catch (error) {
+			throw error;
+		}
 	},
 
 	async setLeverage(symbol, leverage) {
-		console.log(`   ⚡️ [KuCoin] Setting Leverage for ${symbol} to ${leverage}x`);
-		const payload = { leverage: leverage.toString() };
-		// Endpoint này yêu cầu symbol trong path
-		return _signedRequest(`/api/v1/position/leverage/${symbol}`, 'POST', payload);
+		// ✅ Đòn bẩy sẽ được gửi cùng với lệnh đặt hàng.
+		console.log(`   ⓘ [KuCoin] Leverage will be set within the placeOrder call. Skipping separate setLeverage call.`);
+		return;
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async placeOrder(symbol, side, quantity, leverage) {
+		const contract = formatSymbol(symbol);
 		const payload = {
-			clientOid: `my-trader-${Date.now()}`, // ID duy nhất cho lệnh
-			symbol,
+			clientOid: `my-trader-${Date.now()}`,
+			symbol: contract,
+			leverage: leverage.toString(), // ✅ Gửi đòn bẩy trực tiếp trong lệnh
 			side: side.toLowerCase(), // 'buy' hoặc 'sell'
 			type: 'market',
-			size: Math.round(quantity), // KuCoin yêu cầu size là số nguyên (số lượng hợp đồng)
+			size: Math.round(quantity),
+			marginMode: "ISOLATED"
 		};
 
 		const data = await _signedRequest('/api/v1/orders', 'POST', payload);
@@ -165,8 +193,9 @@ export const kucoinHandler = {
 	},
 
 	async cancelAllOpenOrders(symbol) {
-		console.log(`   -> [KuCoin] Cancelling all open orders for ${symbol}`);
-		const params = { symbol };
+		const contract = formatSymbol(symbol);
+		console.log(`   -> [KuCoin] Cancelling all open orders for ${contract}`);
+		const params = { symbol: contract };
 		try {
 			await _signedRequest('/api/v1/orders', 'DELETE', params);
 			console.log(`   ✅ [KuCoin] Successfully cancelled open orders for ${symbol}.`);
@@ -181,32 +210,36 @@ export const kucoinHandler = {
 	},
 
 	async closePosition(symbol) {
-		console.log(`   -> [KuCoin] Starting full closure process for ${symbol}...`);
+		const contract = formatSymbol(symbol);
+		console.log(`   -> [KuCoin] Starting full closure process for ${contract}...`);
+		
+		// 1. Hủy tất cả các lệnh đang mở (limit, stop...) để tránh xung đột
 		await this.cancelAllOpenOrders(symbol);
 
+		// 2. Lấy thông tin vị thế hiện tại để xác định hướng và số lượng cần đóng
 		const positionInfo = await this.getPNL(symbol);
 
 		if (!positionInfo || positionInfo.size === 0) {
-			console.log(`   ✅ [KuCoin] No open position found for ${symbol}.`);
-			return { message: `No open position for ${symbol}` };
+			console.log(`   ✅ [KuCoin] No open position found for ${contract}.`);
+			return { message: `No open position for ${contract}` };
 		}
 
 		const quantityToClose = Math.abs(positionInfo.size);
+		// Xác định hướng đóng lệnh: bán để đóng long, mua để đóng short
 		const closeSide = positionInfo.holdSide === 'long' ? 'sell' : 'buy';
 
-		console.log(`   -> [KuCoin] Closing ${quantityToClose} of ${symbol} with side ${closeSide}`);
+		console.log(`   -> [KuCoin] Closing ${quantityToClose} of ${contract} with side ${closeSide}`);
 
+		// 3. Gửi lệnh đóng vị thế.
 		const payload = {
 			clientOid: `my-trader-close-${Date.now()}`,
-			symbol,
-			side: closeSide,
+			symbol: contract,
+			closeOrder: true,
 			type: 'market',
-			size: Math.round(quantityToClose),
-			closeOrder: true, // Đánh dấu đây là lệnh đóng vị thế
 		};
 
 		const data = await _signedRequest('/api/v1/orders', 'POST', payload);
-		console.log(`   ✅ [KuCoin] Closed position ${symbol}, orderId: ${data.data.orderId}`);
+		console.log(`   ✅ [KuCoin] Closed position ${contract}, orderId: ${data.data.orderId}`);
 		return { orderId: data.data.orderId };
 	}
 };

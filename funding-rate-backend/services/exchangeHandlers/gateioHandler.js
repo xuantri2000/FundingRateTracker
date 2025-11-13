@@ -182,14 +182,24 @@ export const gateioHandler = {
 			price: 0, // Market order không cần price
 		};
 		
-		const data = await _signedRequest(
-			`/futures/${SETTLE_CURRENCY}/orders`, 
-			'POST',
-			{}, // no query params
-			bodyParams // body params
-		);
-		
-		return { orderId: data.id };
+		try {
+			const data = await _signedRequest(
+				`/futures/${SETTLE_CURRENCY}/orders`, 
+				'POST',
+				{}, // no query params
+				bodyParams // body params
+			);
+			
+			return { orderId: data.id };
+		} catch (error) {
+			if (error.message && error.message.includes('invalid size with close-order')) {
+				throw new Error(`Số lượng quá nhỏ hoặc không hợp lệ.`);
+			}
+			else {
+				throw error;
+			}
+		}
+
 	},
 
 	async cancelAllOpenOrders(symbol) {
