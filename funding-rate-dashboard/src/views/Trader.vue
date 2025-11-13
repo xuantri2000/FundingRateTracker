@@ -21,12 +21,25 @@
 					</div>
 
 					<!-- Dual Panel -->
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+					<div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-center">
 						<!-- Long Panel -->
 						<div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
 							<h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
 							<TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges"
 								:disabled="isTrackingPnl" :estimated-value="longOrderValue" />
+						</div>
+
+						<!-- Nút hoán đổi -->
+						<div class="flex justify-center md:flex-col">
+							<button @click="swapOrders" :disabled="isTrackingPnl"
+								class="p-3 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+								title="Đảo ngược lệnh Long và Short">
+								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+									stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+									<path stroke-linecap="round" stroke-linejoin="round"
+										d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+								</svg>
+							</button>
 						</div>
 
 						<!-- Short Panel -->
@@ -394,6 +407,18 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 		addLog(`Đã hủy lệnh trên sàn [${exchangeNameMap.value[successfulOrder.exchange] || successfulOrder.exchange}].`, 'info');
 	}
 	reset();
+}
+
+function swapOrders() {
+	if (isTrackingPnl.value) return;
+
+	// Hoán đổi giá trị của hai order
+	const temp = longOrder.value;
+	longOrder.value = shortOrder.value;
+	shortOrder.value = temp;
+
+	addToast('Đã đảo ngược thông tin lệnh Long và Short.', 'info');
+	addLog('Đã đảo ngược thông tin lệnh Long và Short.', 'info');
 }
 
 async function closeHedgedPositions() {

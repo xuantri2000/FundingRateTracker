@@ -154,7 +154,6 @@ export const htxHandler = {
 		const contract = formatSymbol(symbol);
 		const info = await _getContractInfo();
 		const symbolInfo = info.find(i => i.contract_code === contract);
-		// console.log(symbolInfo);
 		if (!symbolInfo) {
 			throw new Error(`[HTX] Symbol info not found for ${contract}`);
 		}
@@ -215,7 +214,7 @@ export const htxHandler = {
 		});
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async placeOrder(symbol, side, quantity, leverage = 1) {
 		const contract = formatSymbol(symbol);
 
 		const orderParams = {
@@ -223,7 +222,7 @@ export const htxHandler = {
 			volume: Math.round(quantity),
 			direction: side === 'BUY' ? 'buy' : 'sell',
 			offset: 'open',
-			lever_rate: 1, // Default leverage, should be set before
+			lever_rate: leverage, // Default leverage, should be set before
 			order_price_type: 'opponent', // Market order
 		};
 

@@ -311,6 +311,20 @@ async function processOrder(symbol, order) {
 			throw new Error(`KuCoin: Số lượng tối thiểu phải là ${symbolInfo.multiplier}.`);
 		}
 	}
+
+	if (exchange === 'bitget' && symbolInfo.sizeMultiplier) {
+		console.log(`    Bitget: Converting amount to contract size...`);
+		// Số lượng hợp đồng = Số lượng base asset / Kích thước 1 hợp đồng (multiplier)
+		quantity = amount / symbolInfo.sizeMultiplier;
+		quantity = Math.round(quantity);
+		console.log(`   Bitget: Amount ${amount} (base asset) ≈ ${quantity} contracts (Multiplier: ${symbolInfo.sizeMultiplier})`);
+
+		if(quantity <= 0) {
+			throw new Error(`Bitget: Số lượng tối thiểu phải là ${symbolInfo.sizeMultiplier}.`);
+		}
+	}
+
+	
 	// KIỂM TRA QUANTITY SAU KHI LÀM TRÒN
 	// if (quantity <= 0) {
 	// 	throw new Error(`Số lượng (Amount) không hợp lệ. Số lượng phải lớn hơn 0.`);
@@ -327,7 +341,7 @@ async function processOrder(symbol, order) {
 	
 	// 4. Set leverage
 	// KuCoin gửi leverage cùng với lệnh, không cần set riêng
-	if (exchange !== 'kucoin') {
+	if (exchange !== 'kucoin' && exchange !== 'htx') {
 		await handler.setLeverage(symbol, leverage);
 		console.log(`   ⚡ Leverage set: ${leverage}x`);
 	}

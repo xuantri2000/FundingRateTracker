@@ -6,7 +6,7 @@ import { hasCredentials, MODE } from './services/config.js';
 // ====================================================================
 // CÀI ĐẶT TEST
 // ====================================================================
-const TEST_SYMBOL = 'DOGEUSDT'; // Symbol để test (sẽ được chuyển thành BTC_USDT)
+const TEST_SYMBOL = 'LINKUSDT'; // Symbol để test (sẽ được chuyển thành BTC_USDT)
 const TEST_LEVERAGE = 10;      // Đòn bẩy để test
 const TEST_QUANTITY = 1;       // Số lượng hợp đồng để test (Gate.io dùng số nguyên)
 // ====================================================================
@@ -46,16 +46,16 @@ async function runhtxTests() {
   // --- PRIVATE API TESTS - CẦN API KEY ---
 
   // 3. Test getPNL (Private)
-  try {
-    console.log(`3. 💰 Đang lấy PNL cho ${TEST_SYMBOL}...`);
-    const pnlInfo = await htxHandler.getPNL("LINKUSDT");
+//   try {
+//     console.log(`3. 💰 Đang lấy PNL cho ${TEST_SYMBOL}...`);
+//     const pnlInfo = await htxHandler.getPNL("LINKUSDT");
 	
-    console.log('   ✅ Thông tin PNL:');
-    console.log(`      - PNL: $${pnlInfo.pnl}`);
-    console.log(`      - Size: ${pnlInfo.size}\n`);
-  } catch (error) {
-    console.error(`   ❌ Lỗi: ${error.message}\n`);
-  }
+//     console.log('   ✅ Thông tin PNL:');
+//     console.log(`      - PNL: $${pnlInfo.pnl}`);
+//     console.log(`      - Size: ${pnlInfo.size}\n`);
+//   } catch (error) {
+//     console.error(`   ❌ Lỗi: ${error.message}\n`);
+//   }
 
   // 4. Test setMarginType (Private)
 //   try {
@@ -67,13 +67,13 @@ async function runhtxTests() {
 //   }
 
 //   // 5. Test setLeverage (Private)
-//   try {
-//     console.log(`5. ⚡️ Đang cài đặt đòn bẩy ${TEST_LEVERAGE}x...`);
-//     await htxHandler.setLeverage(TEST_SYMBOL, TEST_LEVERAGE);
-//     console.log(`   ✅ Đã gửi yêu cầu cài đặt đòn bẩy.\n`);
-//   } catch (error) {
-//     console.error(`   ❌ Lỗi: ${error.message}\n`);
-//   }
+  try {
+    console.log(`5. ⚡️ Đang cài đặt đòn bẩy ${TEST_LEVERAGE}x...`);
+    await htxHandler.setLeverage(TEST_SYMBOL, TEST_LEVERAGE);
+    console.log(`   ✅ Đã gửi yêu cầu cài đặt đòn bẩy.\n`);
+  } catch (error) {
+    console.error(`   ❌ Lỗi: ${error.message}\n`);
+  }
 
   // --- PHẦN NGUY HIỂM: ĐẶT & ĐÓNG LỆNH ---
   // Bỏ comment khối dưới nếu muốn test thật (SẼ ĐẶT LỆNH THẬT!)

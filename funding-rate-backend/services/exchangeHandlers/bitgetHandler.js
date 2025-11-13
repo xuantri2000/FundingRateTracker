@@ -118,6 +118,7 @@ export const bitgetHandler = {
 	async getSymbolInfo(symbol) {
 		const info = await _getContractsInfo();
 		const symbolInfo = info.find(i => i.symbol === symbol);
+		console.log(symbolInfo)
 		if (!symbolInfo) {
 			throw new Error(`[Bitget] Symbol info not found for ${symbol}`);
 		}
@@ -127,6 +128,7 @@ export const bitgetHandler = {
 			quantityPrecision: parseInt(symbolInfo.volumePlace, 10),
 			// Bitget dùng 'maxLever' cho đòn bẩy tối đa
 			maxLeverage: parseFloat(symbolInfo.maxLever),
+			sizeMultiplier: parseFloat(symbolInfo.sizeMultiplier),
 		};
 	},
 

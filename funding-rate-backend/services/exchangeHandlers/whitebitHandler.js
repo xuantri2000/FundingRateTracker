@@ -252,10 +252,19 @@ export const whitebitHandler = {
       nonce: Date.now()
     };
     console.log(`   🛒 [WhiteBIT] Placing MARKET ${side} order for ${quantity} ${tickerId}`);
-    // ✅ Endpoint đúng cho collateral/futures market order
-    const data = await _signedRequest('/api/v4/order/collateral/market', 'POST', payload);
-    // Trả về ID lệnh
-    return { orderId: data?.orderId || 'N/A' };
+	try{
+		// ✅ Endpoint đúng cho collateral/futures market order
+		const data = await _signedRequest('/api/v4/order/collateral/market', 'POST', payload);
+		// Trả về ID lệnh
+		return { orderId: data?.orderId || 'N/A' };
+	}catch(error){
+		if (error.message && error.message.includes("The total amount must be at least")) {
+			throw new Error(`Số lượng quá nhỏ hoặc không hợp lệ.`);
+		}
+		else {
+			throw error;
+		}
+	}
   },
 
   // Cần API Key (Private)
