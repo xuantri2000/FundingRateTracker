@@ -1,5 +1,0 @@
-https://api.kucoin.com/api/ua/v1/market/funding-rate?symbol=(KGENUSDT)[M]
-https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=(KGENUSDT)&productType=usdt-futures
-https://api.gateio.ws/api/v4/futures/usdt/contracts/KGEN[_]USDT
-https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate?contract_code=KGEN[-]USDT
-https://contract.mexc.com/api/v1/contract/funding_rate/KGEN[_]USDT
