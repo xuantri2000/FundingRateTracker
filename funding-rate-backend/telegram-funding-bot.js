@@ -13,8 +13,8 @@ const agent = new Agent({
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-const COIN_UPDATE_MINUTE = 47;
-const FUNDING_UPDATE_START = 50;
+const COIN_UPDATE_MINUTE = 30;
+const FUNDING_UPDATE_START = 31;
 const FUNDING_UPDATE_END = 59;
 
 // ==================== EXCHANGE SERVICE ====================
@@ -376,8 +376,8 @@ class FundingRateBot {
       console.log('✅ Đã gửi message lên Telegram');
     } catch (error) {
         console.error('❌ Lỗi gửi Telegram:', error.response?.body || error.message);
-		console.log('--- Message lỗi ---');
-		console.log(message)
+		// console.log('--- Message lỗi ---');
+		// console.log(message)
     }
   }
 
