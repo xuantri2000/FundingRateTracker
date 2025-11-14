@@ -13,25 +13,25 @@ const agent = new Agent({
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-const COIN_UPDATE_MINUTE = 19;
-const FUNDING_UPDATE_START = 20;
+const COIN_UPDATE_MINUTE = 47;
+const FUNDING_UPDATE_START = 50;
 const FUNDING_UPDATE_END = 59;
 
 // ==================== EXCHANGE SERVICE ====================
 
 const EXCHANGE_HANDLERS = {
-  binance: {
-    symbolSuffix: 'USDT',
-    allTickers: {
-      url: 'https://fapi.binance.com/fapi/v1/premiumIndex',
-      extract: (data) => data.map(item => ({
-        symbol: item.symbol.replace('USDT', ''),
-        rate: parseFloat(item.lastFundingRate)
-      })).filter(item => item.symbol && !isNaN(item.rate))
-    },
-    buildUrl: (symbol) => `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
-    extractRate: (data) => data.lastFundingRate !== undefined ? parseFloat(data.lastFundingRate) : null,
-  },
+//   binance: {
+//     symbolSuffix: 'USDT',
+//     allTickers: {
+//       url: 'https://fapi.binance.com/fapi/v1/premiumIndex',
+//       extract: (data) => data.map(item => ({
+//         symbol: item.symbol.replace('USDT', ''),
+//         rate: parseFloat(item.lastFundingRate)
+//       })).filter(item => item.symbol && !isNaN(item.rate))
+//     },
+//     buildUrl: (symbol) => `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
+//     extractRate: (data) => data.lastFundingRate !== undefined ? parseFloat(data.lastFundingRate) : null,
+//   },
   kucoin: {
     symbolSuffix: 'USDTM',
     allTickers: {
