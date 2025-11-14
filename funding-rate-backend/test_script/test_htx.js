@@ -1,7 +1,7 @@
 // test_htx.js - Test Gate.io API
 import 'dotenv/config';
-import { htxHandler } from './services/exchangeHandlers/htxHandler.js';
-import { hasCredentials, MODE } from './services/config.js';
+import { htxHandler } from '../services/exchangeHandlers/htxHandler.js';
+import { hasCredentials, MODE } from '../services/config.js';
 
 // ====================================================================
 // CÀI ĐẶT TEST

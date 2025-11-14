@@ -1,7 +1,7 @@
 // test_whitebit_fixed.js - Test WhiteBIT API đã sửa lỗi
 import 'dotenv/config';
-import { whitebitHandler } from './services/exchangeHandlers/whitebitHandler.js';
-import { hasCredentials, MODE } from './services/config.js';
+import { whitebitHandler } from '../services/exchangeHandlers/whitebitHandler.js';
+import { hasCredentials, MODE } from '../services/config.js';
 
 // ====================================================================
 // CÀI ĐẶT TEST

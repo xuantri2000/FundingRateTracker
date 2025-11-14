@@ -1,7 +1,7 @@
 // test_kucoin.js - Test MEXC API
 import 'dotenv/config';
-import { kucoinHandler } from './services/exchangeHandlers/kucoinHandler.js';
-import { hasCredentials, MODE } from './services/config.js';
+import { kucoinHandler } from '../services/exchangeHandlers/kucoinHandler.js';
+import { hasCredentials, MODE } from '../services/config.js';
 
 // ====================================================================
 // CÀI ĐẶT TEST

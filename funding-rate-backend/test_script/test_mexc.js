@@ -1,7 +1,7 @@
 // test_mexc.js - Test MEXC API
 import 'dotenv/config';
-import { mexcHandler } from './services/exchangeHandlers/mexcHandler.js';
-import { hasCredentials, MODE } from './services/config.js';
+import { mexcHandler } from '../services/exchangeHandlers/mexcHandler.js';
+import { hasCredentials, MODE } from '../services/config.js';
 
 // ====================================================================
 // CÀI ĐẶT TEST

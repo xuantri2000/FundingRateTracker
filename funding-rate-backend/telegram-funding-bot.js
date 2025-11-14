@@ -13,173 +13,154 @@ const agent = new Agent({
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-const COIN_UPDATE_MINUTE = 47;
-const FUNDING_UPDATE_START = 50;
+const COIN_UPDATE_MINUTE = 19;
+const FUNDING_UPDATE_START = 20;
 const FUNDING_UPDATE_END = 59;
 
 // ==================== EXCHANGE SERVICE ====================
-const formatSymbol = (baseSymbol, exchange) => {
-  switch(exchange) {
-    case 'kucoin':
-      return `${baseSymbol}USDTM`;
-    case 'bitget':
-      return `${baseSymbol}USDT`;
-    case 'gateio':
-      return `${baseSymbol}_USDT`;
-    case 'htx':
-      return `${baseSymbol}-USDT`;
-    case 'mexc':
-      return `${baseSymbol}_USDT`;
-    case 'whitebit':
-      return `${baseSymbol}_PERP`;
-    case 'binance':
-      return `${baseSymbol}USDT`;
-	case 'bybit':
-	  return `${baseSymbol}USDT`;
-    default:
-      return `${baseSymbol}USDT`;
+
+const EXCHANGE_HANDLERS = {
+  binance: {
+    symbolSuffix: 'USDT',
+    allTickers: {
+      url: 'https://fapi.binance.com/fapi/v1/premiumIndex',
+      extract: (data) => data.map(item => ({
+        symbol: item.symbol.replace('USDT', ''),
+        rate: parseFloat(item.lastFundingRate)
+      })).filter(item => item.symbol && !isNaN(item.rate))
+    },
+    buildUrl: (symbol) => `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
+    extractRate: (data) => data.lastFundingRate !== undefined ? parseFloat(data.lastFundingRate) : null,
+  },
+  kucoin: {
+    symbolSuffix: 'USDTM',
+    allTickers: {
+      url: 'https://api-futures.kucoin.com/api/v1/contracts/active',
+      extract: (data) => data.code === '200000' ? data.data.map(item => ({
+        symbol: item.symbol.replace('USDTM', ''),
+        rate: parseFloat(item.fundingRate)
+      })).filter(item => item.symbol && !isNaN(item.rate)) : []
+    },
+    buildUrl: (symbol) => `https://api.kucoin.com/api/ua/v1/market/funding-rate?symbol=${symbol}`,
+    extractRate: (data) => data.code === '200000' && data.data ? parseFloat(data.data.nextFundingRate) : null,
+  },
+  bitget: {
+    symbolSuffix: 'USDT',
+    allTickers: {
+      url: 'https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures',
+      extract: (data) => data.code === '00000' ? data.data.map(item => ({
+        symbol: item.symbol.replace('USDT', ''),
+        rate: parseFloat(item.fundingRate)
+      })).filter(item => item.symbol && !isNaN(item.rate)) : []
+    },
+    buildUrl: (symbol) => `https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=${symbol}&productType=usdt-futures`,
+    extractRate: (data) => data.code === '00000' && data.data?.length > 0 ? parseFloat(data.data[0].fundingRate) : null,
+  },
+  gateio: {
+    symbolSuffix: '_USDT',
+    allTickers: {
+      url: 'https://api.gateio.ws/api/v4/futures/usdt/contracts',
+      extract: (data) => Array.isArray(data) ? data.map(item => ({
+        symbol: item.name.replace('_USDT', ''),
+        rate: parseFloat(item.funding_rate)
+      })).filter(item => item.symbol && !isNaN(item.rate)) : []
+    },
+    buildUrl: (symbol) => `https://api.gateio.ws/api/v4/futures/usdt/contracts/${symbol}`,
+    extractRate: (data) => data.funding_rate ? parseFloat(data.funding_rate) : null,
+  },
+  htx: {
+    symbolSuffix: '-USDT',
+    allTickers: {
+      url: 'https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate',
+      fetchOptions: { dispatcher: agent },
+      extract: (data) => data.status === 'ok' ? data.data.map(item => ({
+        symbol: item.contract_code.replace('-USDT', ''),
+        rate: parseFloat(item.funding_rate)
+      })).filter(item => item.symbol && !isNaN(item.rate)) : []
+    },
+    buildUrl: (symbol) => `https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate?contract_code=${symbol}`,
+    extractRate: (data) => data.status === 'ok' && data.data?.length > 0 ? parseFloat(data.data[0].funding_rate) : null,
+    fetchOptions: { dispatcher: agent },
+  },
+  bybit: {
+    symbolSuffix: 'USDT',
+    allTickers: {
+      url: 'https://api.bybit.com/v5/market/tickers?category=linear',
+      extract: (data) => data.retCode === 0 ? data.result.list.map(item => ({
+        symbol: item.symbol.replace('USDT', ''),
+        rate: parseFloat(item.fundingRate)
+      })).filter(item => item.symbol && !isNaN(item.rate)) : []
+    },
+    buildUrl: (symbol) => `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`,
+    extractRate: (data) => data.retCode === 0 && data.result?.list?.length ? parseFloat(data.result.list[0].fundingRate) : null,
+  },
+};
+
+const fetchFromExchange = async (exchange, baseSymbol) => {
+  const handler = EXCHANGE_HANDLERS[exchange];
+  if (!handler) return null;
+
+  try {
+    const formattedSymbol = `${baseSymbol}${handler.symbolSuffix}`;
+    const url = handler.buildUrl(formattedSymbol);
+    const response = await fetch(url, handler.fetchOptions || {});
+    const data = await response.json();
+    return handler.extractRate(data);
+  } catch (error) {
+    console.error(`❌ ${exchange} lỗi ${baseSymbol}:`, error.message);
+    return null;
   }
 };
 
-const fetchTop8Binance = async () => {
+const fetchTickersFromExchange = async (exchange) => {
+  const handler = EXCHANGE_HANDLERS[exchange];
+  if (!handler?.allTickers) return [];
+
   try {
-    const response = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+    const { url, fetchOptions, extract } = handler.allTickers;
+    const response = await fetch(url, fetchOptions || {});
     const data = await response.json();
-    
-    const sorted = data
-      .filter(item => item.lastFundingRate)
-      .sort((a, b) => parseFloat(a.lastFundingRate) - parseFloat(b.lastFundingRate))
-      .slice(0, 8);
-    
-    return sorted.map(item => ({
-      symbol: item.symbol.replace('USDT', ''),
-      binanceFundingRate: parseFloat(item.lastFundingRate),
-      nextFundingTime: item.nextFundingTime
-    }));
+    return extract(data);
   } catch (error) {
-    console.error('❌ Lỗi Binance:', error);
+    console.error(`❌ Lỗi fetch all tickers từ ${exchange}:`, error.message);
     return [];
   }
 };
 
-const fetchBinance = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'binance');
-    const response = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${formattedSymbol}`);
-    const data = await response.json();
-    if (data.lastFundingRate !== undefined) {
-      return parseFloat(data.lastFundingRate);
-    }
-  } catch (error) {
-    console.error(`❌ Binance lỗi ${symbol}:`, error.message);
-  }
-  return null;
-};
+const loadWatchlistCoins = async () => {
+  console.log('📋 Đang tạo watchlist từ các sàn...');
+  const exchanges = Object.keys(EXCHANGE_HANDLERS);
+  
+  // Thêm WhiteBIT vào logic chung
+  const whitebitTickers = (await fetchAllWhiteBIT([])).allTickers;
 
-const fetchKuCoin = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'kucoin');
-    const response = await fetch(`https://api.kucoin.com/api/ua/v1/market/funding-rate?symbol=${formattedSymbol}`);
-    const data = await response.json();
-    if (data.code === '200000' && data.data) {
-      return parseFloat(data.data.nextFundingRate);
-    }
-  } catch (error) {
-    console.error(`❌ KuCoin lỗi ${symbol}:`, error);
-  }
-  return null;
-};
+  const promises = exchanges.map(ex => fetchTickersFromExchange(ex));
+  const results = await Promise.all(promises);
+  results.push(whitebitTickers); // Thêm kết quả của WhiteBIT
 
-const fetchBitget = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'bitget');
-    const response = await fetch(
-      `https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=${formattedSymbol}&productType=usdt-futures`
-    );
-    const data = await response.json();
-    
-    if (data.code === '00000' && data.data && data.data.length > 0) {
-      return parseFloat(data.data[0].fundingRate);
-    }
-  } catch (error) {
-    console.error(`❌ Bitget lỗi ${symbol}:`, error.message);
-  }
-  return null;
-};
+  const allSelectedCoins = new Set();
 
-const fetchGateIO = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'gateio');
-    const response = await fetch(
-      `https://api.gateio.ws/api/v4/futures/usdt/contracts/${formattedSymbol}`
-    );
-    const data = await response.json();
-    
-    if (data.funding_rate) {
-      return parseFloat(data.funding_rate);
-    }
-  } catch (error) {
-    console.error(`❌ Gate.io lỗi ${symbol}:`, error.message);
-  }
-  return null;
-};
+  results.forEach((tickers, index) => {
+    if (tickers.length === 0) return;
 
-const fetchHTX = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'htx');
-    const response = await fetch(
-      `https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate?contract_code=${formattedSymbol}`,
-	  { dispatcher: agent }
-    );
-    const data = await response.json();
-    
-    if (data.status === 'ok' && data.data && data.data.length > 0) {
-      return parseFloat(data.data[0].funding_rate);
-    }
-  } catch (error) {
-    console.error(`❌ HTX lỗi ${symbol}:`, error.message);
-  }
-  return null;
-};
+    const exchangeName = index < exchanges.length ? exchanges[index] : 'whitebit';
+    console.log(`🔍 Sàn ${exchangeName} có ${tickers.length} tickers.`);
 
-const fetchMEXC = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'mexc');
-    const response = await fetch(
-      `https://contract.mexc.com/api/v1/contract/funding_rate/${formattedSymbol}`
-    );
-    const data = await response.json();
-    
-    if (data.success && data.data) {
-      return parseFloat(data.data.fundingRate);
-    }
-  } catch (error) {
-    console.error(`❌ MEXC lỗi ${symbol}:`, error.message);
-  }
-  return null;
-};
+    // Sắp xếp theo funding rate
+    tickers.sort((a, b) => a.rate - b.rate);
 
-const fetchByBit = async (symbol) => {
-  try {
-    const formattedSymbol = formatSymbol(symbol, 'bybit');
-    const response = await fetch(
-      `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${formattedSymbol}`
-    );
-    const data = await response.json();
+    // Lấy 8 coin thấp nhất và 8 coin cao nhất
+    const selected = [...tickers.slice(0, 8), ...tickers.slice(-8)];
+    selected.forEach(coin => allSelectedCoins.add(coin.symbol));
+  });
 
-    if (data.retCode === 0 && data.result?.list?.length) {
-      const item = data.result.list[0];
-      return parseFloat(item.fundingRate);
-    }
-  } catch (error) {
-    console.error(`❌ Bybit lỗi ${symbol}:`, error.message);
-  }
-  return null;
+  console.log(`✅ Watchlist được tạo với ${allSelectedCoins.size} coins duy nhất.`);
+  return Array.from(allSelectedCoins).map(symbol => ({ symbol }));
 };
 
 const fetchAllWhiteBIT = async (symbolList) => {
   const resultMap = {};
-  
+  let allTickers = [];
   try {
     const response = await fetch('https://whitebit.com/api/v4/public/futures');
     const result = await response.json();
@@ -189,26 +170,34 @@ const fetchAllWhiteBIT = async (symbolList) => {
       return resultMap;
     }
 
+    allTickers = result.result.map(m => ({
+      symbol: m.ticker_id.replace('_PERP', ''),
+      rate: parseFloat(m.funding_rate)
+    })).filter(item => item.symbol && !isNaN(item.rate));
+
     const marketMap = {};
-    result.result.forEach((m) => {
-      if (m.ticker_id && m.funding_rate !== undefined) {
-        marketMap[m.ticker_id] = parseFloat(m.funding_rate);
-      }
+    allTickers.forEach(ticker => {
+      // Dùng để tra cứu cho symbolList (nếu có)
+      const formattedSymbol = `${ticker.symbol}_PERP`;
+      marketMap[formattedSymbol] = ticker.rate;
     });
 
     symbolList.forEach((symbol) => {
-      const formattedSymbol = formatSymbol(symbol, 'whitebit');
+      const formattedSymbol = `${symbol}_PERP`;
       resultMap[symbol] = marketMap[formattedSymbol] || null;
     });
 
-    console.log(`✅ WhiteBIT: Đã lấy ${Object.keys(resultMap).length} coins`);
+    if (symbolList.length > 0) {
+      console.log(`✅ WhiteBIT: Đã lấy ${Object.keys(resultMap).length} coins`);
+    }
   } catch (error) {
     console.error(`❌ WhiteBIT lỗi:`, error.message);
     symbolList.forEach((symbol) => {
       resultMap[symbol] = null;
     });
   }
-
+  
+  if (symbolList.length === 0) return { allTickers };
   return resultMap;
 };
 
@@ -235,31 +224,23 @@ const sortRatesByValue = (rates) => {
 
 const fetchAllFundingRates = async (coinList) => {
   const symbolList = coinList.map(c => c.symbol);
-  const whiteBitData = await fetchAllWhiteBIT(symbolList);
+  // WhiteBIT có API lấy tất cả cùng lúc, nên giữ lại logic riêng
+  const whiteBitData = await fetchAllWhiteBIT(symbolList); // Chỉ lấy rate cho các coin trong list
+  const exchangesToFetch = Object.keys(EXCHANGE_HANDLERS);
 
   const results = await Promise.all(
     coinList.map(async (coin) => {
       try {
-        const [binance, kucoin, bitget, gateio, htx, mexc, bybit] = await Promise.all([
-          fetchBinance(coin.symbol),
-          fetchKuCoin(coin.symbol),
-          fetchBitget(coin.symbol),
-          fetchGateIO(coin.symbol),
-          fetchHTX(coin.symbol),
-          fetchMEXC(coin.symbol),
-          fetchByBit(coin.symbol),
-        ]);
+        const ratePromises = exchangesToFetch.map(exchange => 
+          fetchFromExchange(exchange, coin.symbol)
+        );
+        const ratesArray = await Promise.all(ratePromises);
 
-        const rates = {
-          binance,
-          kucoin,
-          bitget,
-          gateio,
-          htx,
-          mexc,
-		  bybit,
-          whitebit: whiteBitData[coin.symbol] || null,
-        };
+        const rates = {};
+        exchangesToFetch.forEach((exchange, index) => {
+          rates[exchange] = ratesArray[index];
+        });
+        rates.whitebit = whiteBitData[coin.symbol] || null;
 
         // ✅ Sort thứ tự các sàn theo funding tăng dần
         return {
@@ -313,12 +294,16 @@ const formatMessage = (coinsData) => {
     return { ...coin, diff };
   });
 
-  // ✅ Sort theo khoảng cách tăng dần (null => Infinity)
-  const sortedCoins = coinsWithDiff.sort((a, b) => {
-    const ad = a.diff ?? Infinity;
-    const bd = b.diff ?? Infinity;
-    return ad - bd;
-  });
+  // ✅ Sort theo khoảng cách tuyệt đối lớn nhất và chỉ lấy top 10
+  const sortedCoins = coinsWithDiff
+    .sort((a, b) => {
+      // Sắp xếp theo giá trị tuyệt đối của diff, giảm dần.
+      // Coin không có diff (null) sẽ bị đẩy xuống cuối.
+      const ad = a.diff !== null ? Math.abs(a.diff) : -1;
+      const bd = b.diff !== null ? Math.abs(b.diff) : -1;
+      return bd - ad;
+    })
+    .slice(0, 10); // Lấy 10 coin có khoảng cách lớn nhất
 
   // ✅ Format message sau khi sort
   let message = '📊 FUNDING RATES UPDATE\n';
@@ -339,8 +324,6 @@ const formatMessage = (coinsData) => {
         bitget: 'Bitget',
         gateio: 'Gate.io',
         htx: 'HTX',
-        mexc: 'MEXC',
-        whitebit: 'WhiteBIT',
         bybit: 'ByBIT',
       }[exchange] || exchange;
 
@@ -365,14 +348,14 @@ class FundingRateBot {
 
   async initialize() {
     console.log('🤖 Bot khởi động...');
-    await this.loadTop8Coins();
+    await this.loadWatchlist();
     this.startScheduler();
   }
 
-  async loadTop8Coins() {
-    console.log('📋 Đang load danh sách top 8 coins...');
-    this.coins = await fetchTop8Binance();
-	await this.bot.sendMessage(CHAT_ID, `✅ Đã đọc 8 symbols mới từ binance: ` + this.coins.map(c => c.symbol).join(', '));
+  async loadWatchlist() {
+    console.log('📋 Đang load danh sách coins...');
+    this.coins = await loadWatchlistCoins();
+	await this.bot.sendMessage(CHAT_ID, `✅ Đã đọc ${this.coins.length} symbols mới: ` + this.coins.map(c => c.symbol).join(', '));
   }
 
   async sendFundingUpdate() {
@@ -414,7 +397,7 @@ class FundingRateBot {
       // Phút 47: Load danh sách coins mới
       if (minute === COIN_UPDATE_MINUTE) {
         console.log('🔄 Thời gian load coins mới!');
-        await this.loadTop8Coins();
+        await this.loadWatchlist();
       }
       
       // Phút 50-59: Gửi funding rates
@@ -436,5 +419,5 @@ bot.initialize().catch(console.error);
 
 console.log('✅ Bot đã sẵn sàng!');
 console.log(`📅 Lịch trình:`);
-console.log(`   - Phút ${COIN_UPDATE_MINUTE}: Load top 8 coins`);
+console.log(`   - Phút ${COIN_UPDATE_MINUTE}: Tạo watchlist mới`);
 console.log(`   - Phút ${FUNDING_UPDATE_START}-${FUNDING_UPDATE_END}: Gửi funding rates`);
