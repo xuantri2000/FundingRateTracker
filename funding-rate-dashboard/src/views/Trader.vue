@@ -30,7 +30,7 @@
 						</div>
 
 						<!-- Nút hoán đổi -->
-						<div class="flex justify-center md:flex-col">
+						<div class="flex justify-center md:flex-col gap-2 items-center">
 							<button @click="swapOrders" :disabled="isTrackingPnl"
 								class="p-3 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
 								title="Đảo ngược lệnh Long và Short">
@@ -40,6 +40,10 @@
 										d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
 								</svg>
 							</button>
+							<div v-if="orderRatio !== 'N/A'" class="text-center">
+								<p class="text-xs text-slate-400">Tỷ lệ L/S</p>
+								<p class="text-sm font-mono font-bold text-yellow-300">{{ orderRatio }}</p>
+							</div>
 						</div>
 
 						<!-- Short Panel -->
@@ -115,6 +119,15 @@
 				</div>
 
 				<div class="flex justify-center gap-4">
+					<!-- Nút Săn PNL -->
+					<button @click="togglePnlHunting" :disabled="isLoading"
+						class="px-6 py-3 rounded-xl shadow-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+						:class="isPnlHunting ? 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-yellow-500/30' : 'bg-green-600 hover:bg-green-700 text-white shadow-green-500/30'">
+						<span v-if="isLoading && isPnlHunting">Đang dừng...</span>
+						<span v-else-if="isPnlHunting">🎯 Đang săn PNL (Dừng)</span>
+						<span v-else>🔫 Săn PNL</span>
+					</button>
+
 					<!-- Nút Buộc hủy lệnh -->
 					<button @click="() => forceClosePositions()" :disabled="isLoading"
 						class="bg-red-800 hover:bg-red-900 text-white px-6 py-3 rounded-xl shadow-lg shadow-red-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
@@ -167,14 +180,13 @@ const addLog = (message, type = 'info') => {
 const isTrackingPnl = ref(false)
 const pnlData = ref([])
 const successfulPositions = ref([])
+const isPnlHunting = ref(false); // BIẾN MỚI: Trạng thái săn PNL
 let lastPnlDataBeforeUpdate = []; // BIẾN MỚI: Lưu trữ PNL của lần fetch trước
 let pnlInterval = null;
 
 // --- State mới cho giá trị USDT dự kiến ---
 const longOrderValue = ref(0);
 const shortOrderValue = ref(0);
-let longPriceInterval = null;
-let shortPriceInterval = null;
 
 const STORAGE_KEY = 'traderState';
 
@@ -188,12 +200,6 @@ onMounted(async () => {
 		addLog('Không thể tải danh sách sàn giao dịch.', 'error')
 	}
 	loadState(); // Tải lại trạng thái khi component được mount
-})
-
-onUnmounted(() => {
-	if (pnlInterval) clearInterval(pnlInterval)
-	if (longPriceInterval) clearInterval(longPriceInterval);
-	if (shortPriceInterval) clearInterval(shortPriceInterval);
 })
 
 const exchangeNameMap = computed(() => {
@@ -216,8 +222,21 @@ const getPnlClass = (pnl) => {
 	return pnl > 0 ? 'text-green-400' : pnl < 0 ? 'text-red-400' : 'text-slate-400'
 }
 
+const orderRatio = computed(() => {
+	if (shortOrderValue.value > 0 && longOrderValue.value > 0) {
+		const ratio = longOrderValue.value / shortOrderValue.value;
+		return ratio.toFixed(5);
+	}
+	return 'N/A';
+});
+
 const startPnlTracking = () => {
 	if (pnlInterval) clearInterval(pnlInterval)
+
+	// Dừng theo dõi giá trị ước tính khi bắt đầu theo dõi PNL
+	longPoller.stopPolling();
+	shortPoller.stopPolling();
+	addLog('Đã dừng theo dõi giá trị ước tính.', 'info');
 
 	const fetchPnl = async () => {
 		// Chỉ fetch PNL cho các vị thế chưa bị đóng/thanh lý
@@ -282,6 +301,14 @@ const startPnlTracking = () => {
 					});
 				}
 			}
+
+			// KIỂM TRA SĂN PNL
+			if (isPnlHunting.value && totalPnl.value > 0) {
+				addToast(`Tổng PNL > 0 (${totalPnl.value.toFixed(4)} USDT). Tự động đóng lệnh!`, 'success');
+				addLog(`Tổng PNL > 0 (${totalPnl.value.toFixed(4)} USDT). Tự động đóng lệnh!`, 'success');
+				isPnlHunting.value = false; // Tắt chế độ săn
+				await closeHedgedPositions();
+			}
 		} catch (error) {
 			console.error('Lỗi fetch PNL:', error)
 			addToast('Lỗi khi cập nhật PNL.', 'error')
@@ -300,6 +327,11 @@ async function placeOrders() {
 		addLog('Vui lòng nhập đủ thông tin cho cả hai lệnh!', 'warning')
 		return
 	}
+
+	// Dừng polling giá khi bắt đầu quá trình đặt lệnh
+	addLog('Tạm dừng theo dõi giá trị ước tính để đặt lệnh.', 'info');
+	longPoller.stopPolling();
+	shortPoller.stopPolling();
 
 	isLoading.value = true
 	try {
@@ -350,12 +382,14 @@ async function placeOrders() {
 			await handlePartialOrderFailure(failedOrderInfo);
 		} else {
 			// Nếu không thành công cả 2, reset lại
-			successfulPositions.value = []
+			successfulPositions.value = [];
+			reset(); // Khởi động lại polling nếu cả 2 lệnh thất bại
 		}
-		isLoading.value = false; // Di chuyển vào trong try block
 
 	} catch (err) {
 		console.error('❌ Lỗi đặt lệnh:', err)
+		// Nếu có lỗi, reset để khởi động lại polling
+		reset();
 		addToast(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
 		addLog(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
 	} finally {
@@ -443,6 +477,7 @@ async function closeHedgedPositions() {
 		addLog(finalMessage, 'success');
 		localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
 		// Không gọi reset() ngay để người dùng thấy log cuối cùng
+		isPnlHunting.value = false; // Đảm bảo tắt chế độ săn
 		reset(false); // Chỉ reset state, không xóa log
 	} catch (err) {
 		console.error('Lỗi đóng lệnh:', err)
@@ -466,11 +501,12 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
 			symbol: symbol.value,
 			positions: targetPositions, // Cần gửi thông tin các sàn để đóng
 		});
+		isPnlHunting.value = false; // Tắt chế độ săn khi buộc hủy
 		if (shouldReset) {
 			addToast(data.message, 'success');
 			addLog(data.message, 'success');
 			localStorage.removeItem(STORAGE_KEY); // Xóa state khi đã đóng lệnh thành công
-			reset(false); // Chỉ reset state, không xóa log
+			reset(); // Chỉ reset state, không xóa log
 		}
 	} catch (err) {
 		console.error('Lỗi buộc hủy lệnh:', err);
@@ -481,54 +517,110 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
 	}
 }
 
-function reset() {
+function reset(shouldRestartPolling = true) {
 	isTrackingPnl.value = false
 	if (pnlInterval) clearInterval(pnlInterval)
 	pnlData.value = []
 	successfulPositions.value = []
+	isPnlHunting.value = false; // Reset chế độ săn PNL
 	localStorage.removeItem(STORAGE_KEY); // Xóa state khi reset
+
+	if (shouldRestartPolling) {
+		addLog('Khởi động lại theo dõi giá trị ước tính.', 'info');
+		longPoller.startPolling();
+		shortPoller.startPolling();
+	}
+}
+
+function togglePnlHunting() {
+	isPnlHunting.value = !isPnlHunting.value;
+	const status = isPnlHunting.value ? 'Bật' : 'Tắt';
+	const type = isPnlHunting.value ? 'success' : 'info';
+	addToast(`Chế độ săn PNL đã được ${status}.`, type);
+	addLog(`Chế độ săn PNL đã được ${status}.`, type);
 }
 
 // --- LOGIC MỚI: THEO DÕI GIÁ TRỊ USDT DỰ KIẾN ---
 
-const createPriceWatcher = (orderRef, valueRef, debounceRef) => {
-	// Theo dõi sự thay đổi của symbol và order object
-	watch([symbol, orderRef], ([newSymbol, newOrder]) => {
-		// Xóa timeout cũ để debounce
-		if (debounceRef.value) {
-			clearTimeout(debounceRef.value);
-		}
+const createPricePoller = (orderRef, valueRef) => {
+	let pollingInterval = null;
+	let isFetching = false;
 
-		// Nếu không đủ thông tin, reset ngay lập tức
+	const fetchPrice = async () => {
+		if (isFetching) return;
+
+		const newOrder = orderRef.value;
+		const newSymbol = symbol.value;
+
 		if (!newOrder || !newOrder.exchange || !(newOrder.amount > 0) || !newSymbol) {
 			valueRef.value = 0;
 			return;
 		}
 
-		// Đặt timeout mới. API sẽ chỉ được gọi sau 500ms kể từ lần thay đổi cuối cùng.
-		debounceRef.value = setTimeout(async () => {
-			try {
-				const { data } = await axios.get('/api/exchange/price', {
-					params: {
-						exchange: newOrder.exchange,
-						symbol: newSymbol,
-					}
-				});
-				if (data.price) {
-					valueRef.value = data.price * newOrder.amount;
+		isFetching = true;
+		try {
+			const { data } = await axios.get('/api/exchange/price', {
+				params: {
+					exchange: newOrder.exchange,
+					symbol: newSymbol,
 				}
-			} catch (error) {
-				addToast(error.response?.data?.error || 'Lấy giá symbol thất bại.', 'error');
-				addLog(error.response?.data?.error || 'Lấy giá symbol thất bại.', 'error');
-				valueRef.value = 0; // Reset giá trị nếu có lỗi
-			}
-		}, 500); // Thời gian chờ debounce
+			});
+			const calculatedValue = data.price ? data.price * newOrder.amount : 0;
+			valueRef.value = Number(calculatedValue.toFixed(4));
+		} catch (error) {
+			console.error(`[Price Poller] Lỗi lấy giá cho ${newSymbol} trên ${newOrder.exchange}:`, error.response?.data?.error || error.message);
+			valueRef.value = 0;
+			stopPolling(); // Dừng lại nếu có lỗi để tránh spam
+		} finally {
+			isFetching = false;
+		}
+	};
 
+	const startPolling = () => {
+		stopPolling(); // Dừng polling cũ nếu có
+		fetchPrice(); // Fetch ngay lập tức
+		pollingInterval = setInterval(fetchPrice, 1000); // Bắt đầu polling mỗi giây
+	};
+
+	const stopPolling = () => {
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+			pollingInterval = null;
+		}
+	};
+
+	let debounceTimeout = null;
+
+	// Theo dõi sự thay đổi của symbol và order
+	watch([symbol, orderRef], ([newSymbol, newOrder]) => {
+		// Xóa timeout cũ để debounce
+		if (debounceTimeout) clearTimeout(debounceTimeout);
+
+		// Đặt timeout mới. Logic sẽ chỉ chạy sau 1s kể từ lần thay đổi cuối cùng.
+		debounceTimeout = setTimeout(() => {
+			// Kiểm tra xem có đủ thông tin để bắt đầu polling không
+			if (newOrder && newOrder.exchange && newOrder.amount > 0 && newSymbol) {
+				startPolling();
+			} else {
+				stopPolling();
+				valueRef.value = 0;
+			}
+		}, 1000); // Chờ 1 giây
 	}, { deep: true });
+
+	return { startPolling, stopPolling };
 };
 
-createPriceWatcher(longOrder, longOrderValue, { value: longPriceInterval });
-createPriceWatcher(shortOrder, shortOrderValue, { value: shortPriceInterval });
+// Sử dụng hàm mới
+const longPoller = createPricePoller(longOrder, longOrderValue);
+const shortPoller = createPricePoller(shortOrder, shortOrderValue);
+
+// Cập nhật onUnmounted để dừng polling
+onUnmounted(() => {
+	if (pnlInterval) clearInterval(pnlInterval);
+	longPoller.stopPolling();
+	shortPoller.stopPolling();
+});
 
 // --- LOGIC MỚI: LƯU VÀ TẢI TRẠNG THÁI TỪ LOCALSTORAGE ---
 
@@ -540,6 +632,7 @@ const saveState = () => {
 		isTrackingPnl: isTrackingPnl.value,
 		successfulPositions: successfulPositions.value,
 		logs: logs.value,
+		isPnlHunting: isPnlHunting.value, // Lưu trạng thái săn PNL
 	};
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 };
@@ -555,6 +648,7 @@ const loadState = () => {
 			isTrackingPnl.value = state.isTrackingPnl || false;
 			successfulPositions.value = state.successfulPositions || [];
 			logs.value = state.logs || [];
+			isPnlHunting.value = state.isPnlHunting || false; // Khôi phục trạng thái săn PNL
 
 			if (isTrackingPnl.value && successfulPositions.value.length > 0) {
 				addLog('Đã khôi phục phiên giao dịch trước đó.', 'info');
@@ -566,6 +660,10 @@ const loadState = () => {
 					isLiquidated: false,
 				}));
 
+				if (isPnlHunting.value) {
+					addLog('Chế độ săn PNL đang hoạt động từ phiên trước.', 'info');
+				}
+
 				startPnlTracking(); // Bắt đầu theo dõi lại PNL
 			}
 		} catch (e) {
@@ -576,6 +674,6 @@ const loadState = () => {
 };
 
 // Theo dõi các thay đổi và lưu vào localStorage
-watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, logs], saveState, { deep: true });
+watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, logs, isPnlHunting], saveState, { deep: true });
 
 </script>
