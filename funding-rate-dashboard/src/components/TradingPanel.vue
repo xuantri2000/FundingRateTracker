@@ -7,6 +7,7 @@ const props = defineProps({
   side: String,
   exchanges: Array,
   estimatedValue: Number, // ✅ Prop mới để nhận giá trị ước tính
+  currentPrice: Number, // ✅ Prop mới để nhận giá coin hiện tại
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -83,7 +84,7 @@ watch(() => props.modelValue, (newVal) => {
       <div class="flex justify-between items-baseline mb-1">
         <label class="text-slate-400 text-sm">Số lượng (2 chữ số thập phân)</label>
         <div v-if="estimatedValue > 0" class="text-sm text-slate-400">
-          ≈ {{ estimatedValue.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }}
+          ≈ {{ estimatedValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4 }) }}
         </div>
       </div>
       <div class="relative">
@@ -107,6 +108,11 @@ watch(() => props.modelValue, (newVal) => {
             ▼
           </button>
         </div>
+      </div>
+      <!-- Hiển thị giá coin hiện tại -->
+      <div v-if="currentPrice > 0" class="text-center mt-2">
+        <i class="text-xs text-slate-500">Giá hiện tại: </i>
+        <span class="text-sm font-mono text-yellow-300">{{ currentPrice.toFixed(4) }}</span>
       </div>
     </div>
   </div>

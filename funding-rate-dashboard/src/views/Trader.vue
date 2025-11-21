@@ -26,7 +26,7 @@
 						<div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
 							<h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
 							<TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges"
-								:disabled="isTrackingPnl" :estimated-value="longOrderValue" />
+								:disabled="isTrackingPnl" :estimated-value="longOrderValue" :current-price="longOrderPrice" />
 						</div>
 
 						<!-- Nút hoán đổi -->
@@ -50,7 +50,7 @@
 						<div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
 							<h2 class="text-xl text-red-400 font-semibold mb-4">Lệnh Short (SELL)</h2>
 							<TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges"
-								:disabled="isTrackingPnl" :estimated-value="shortOrderValue" />
+								:disabled="isTrackingPnl" :estimated-value="shortOrderValue" :current-price="shortOrderPrice" />
 						</div>
 					</div>
 
@@ -223,11 +223,25 @@ const getPnlClass = (pnl) => {
 }
 
 const orderRatio = computed(() => {
-	if (shortOrderValue.value > 0 && longOrderValue.value > 0) {
-		const ratio = longOrderValue.value / shortOrderValue.value;
+	if (shortOrderPrice.value > 0 && longOrderPrice.value > 0) {
+		const ratio = longOrderPrice.value / shortOrderPrice.value;
 		return ratio.toFixed(5);
 	}
 	return 'N/A';
+});
+
+const longOrderPrice = computed(() => {
+	if (longOrderValue.value > 0 && longOrder.value?.amount > 0) {
+		return longOrderValue.value / longOrder.value.amount;
+	}
+	return 0;
+});
+
+const shortOrderPrice = computed(() => {
+	if (shortOrderValue.value > 0 && shortOrder.value?.amount > 0) {
+		return shortOrderValue.value / shortOrder.value.amount;
+	}
+	return 0;
 });
 
 const startPnlTracking = () => {
