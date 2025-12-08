@@ -186,6 +186,7 @@ const pnlData = ref([])
 const successfulPositions = ref([])
 const isPnlHunting = ref(false); // BIẾN MỚI: Trạng thái săn PNL
 let lastPnlDataBeforeUpdate = []; // BIẾN MỚI: Lưu trữ PNL của lần fetch trước
+let totalOrderValueForPnlHunt = 0; // BIẾN MỚI: Lưu tổng giá trị lệnh để tính ngưỡng PNL
 let pnlInterval = null;
 
 // --- State mới cho giá trị USDT dự kiến ---
@@ -328,12 +329,16 @@ const startPnlTracking = () => {
 				}
 			}
 
-			// KIỂM TRA SĂN PNL
-			if (isPnlHunting.value && totalPnl.value > 0) {
-				addToast(`Tổng PNL > 0 (${totalPnl.value.toFixed(4)} USDT). Tự động đóng lệnh!`, 'success');
-				addLog(`Tổng PNL > 0 (${totalPnl.value.toFixed(4)} USDT). Tự động đóng lệnh!`, 'success');
-				isPnlHunting.value = false; // Tắt chế độ săn
-				await closeHedgedPositions();
+			// KIỂM TRA SĂN PNL (ĐIỀU CHỈNH THEO YÊU CẦU)
+			if (isPnlHunting.value && totalOrderValueForPnlHunt > 0) {
+				const pnlHuntThreshold = totalOrderValueForPnlHunt * 0.0025; // 0.25%
+				if (totalPnl.value >= pnlHuntThreshold) {
+					const successMsg = `Tổng PNL đạt ${totalPnl.value.toFixed(4)} USDT (>= ngưỡng ${pnlHuntThreshold.toFixed(4)} USDT). Tự động đóng lệnh!`;
+					addToast(successMsg, 'success');
+					addLog(successMsg, 'success');
+					isPnlHunting.value = false; // Tắt chế độ săn
+					await closeHedgedPositions();
+				}
 			}
 		} catch (error) {
 			console.error('Lỗi fetch PNL:', error)
@@ -401,6 +406,10 @@ async function placeOrders() {
 		})
 
 		if (successCount === 2) {
+			// Lưu lại tổng giá trị lệnh tại thời điểm đặt lệnh thành công
+			totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
+			addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
+
 			isTrackingPnl.value = true
 			startPnlTracking()
 		} else if (successCount === 1) {
@@ -447,6 +456,10 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 					side: retryResult.side,
 					quantity: retryResult.data.quantity,
 				});
+				// Lưu lại tổng giá trị lệnh tại thời điểm đặt lệnh thành công
+				totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
+				addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
+
 				isTrackingPnl.value = true;
 				startPnlTracking(); // Bắt đầu polling nhanh
 				return; // Thoát khỏi hàm nếu thành công
@@ -562,8 +575,13 @@ function togglePnlHunting() {
 	isPnlHunting.value = !isPnlHunting.value;
 	const status = isPnlHunting.value ? 'Bật' : 'Tắt';
 	const type = isPnlHunting.value ? 'success' : 'info';
-	addToast(`Chế độ săn PNL đã được ${status}.`, type);
-	addLog(`Chế độ săn PNL đã được ${status}.`, type);
+	addToast(`Chế độ "Săn PNL" đã được ${status}.`, type);
+	addLog(`Chế độ "Săn PNL" đã được ${status}.`, type);
+	if (isPnlHunting.value && totalOrderValueForPnlHunt > 0) {
+		const pnlHuntThreshold = totalOrderValueForPnlHunt * 0.0025;
+		addToast(`Mục tiêu PNL: >= ${pnlHuntThreshold.toFixed(4)} USDT (0.25% của ${totalOrderValueForPnlHunt.toFixed(2)} USDT).`, 'info');
+		addLog(`Mục tiêu PNL: >= ${pnlHuntThreshold.toFixed(4)} USDT (0.25% của ${totalOrderValueForPnlHunt.toFixed(2)} USDT).`, 'info');
+	}
 }
 
 // --- LOGIC MỚI: THEO DÕI GIÁ TRỊ USDT DỰ KIẾN ---
@@ -659,6 +677,7 @@ const saveState = () => {
 		successfulPositions: successfulPositions.value,
 		logs: logs.value,
 		isPnlHunting: isPnlHunting.value, // Lưu trạng thái săn PNL
+		totalOrderValueForPnlHunt: totalOrderValueForPnlHunt, // Lưu tổng giá trị lệnh
 	};
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 };
@@ -675,6 +694,7 @@ const loadState = () => {
 			successfulPositions.value = state.successfulPositions || [];
 			logs.value = state.logs || [];
 			isPnlHunting.value = state.isPnlHunting || false; // Khôi phục trạng thái săn PNL
+			totalOrderValueForPnlHunt = state.totalOrderValueForPnlHunt || 0; // Khôi phục tổng giá trị lệnh
 
 			if (isTrackingPnl.value && successfulPositions.value.length > 0) {
 				addLog('Đã khôi phục phiên giao dịch trước đó.', 'info');
@@ -688,6 +708,8 @@ const loadState = () => {
 
 				if (isPnlHunting.value) {
 					addLog('Chế độ săn PNL đang hoạt động từ phiên trước.', 'info');
+					const pnlHuntThreshold = totalOrderValueForPnlHunt * 0.0025;
+					addLog(`Mục tiêu PNL đã khôi phục: >= ${pnlHuntThreshold.toFixed(4)} USDT.`, 'info');
 				}
 
 				startPnlTracking(); // Bắt đầu theo dõi lại PNL
