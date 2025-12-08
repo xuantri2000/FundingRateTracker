@@ -59,12 +59,21 @@
 					</div>
 
 					<!-- Submit -->
-					<div class="flex justify-center">
-						<button @click="placeOrders" :disabled="isLoading || isTrackingPnl"
+					<div class="flex justify-center gap-4">
+						<!-- Nút Săn Lệnh Mới -->
+						<button @click="toggleOrderHunting" :disabled="isLoading || isTrackingPnl"
+							class="px-6 py-3 rounded-xl shadow-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+							:class="isOrderHunting ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/30' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/30'">
+							<span v-if="isOrderHunting">🎯 Đang săn lệnh (Dừng)</span>
+							<span v-else>🔫 Săn lệnh</span>
+						</button>
+
+						<button @click="placeOrders" :disabled="isLoading || isTrackingPnl || isOrderHunting"
 							class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
 							<span v-if="isLoading">Đang xử lý...</span>
 							<span v-else>🚀 Đặt lệnh đồng thời</span>
 						</button>
+
 					</div>
 				</div>
 
@@ -165,6 +174,7 @@ const isLoading = ref(false)
 const logs = ref([])
 
 const toasts = ref([])
+const isOrderHunting = ref(false); // BIẾN MỚI: Trạng thái săn lệnh
 
 const addToast = (message, type = 'info') => {
 	const id = Date.now()
@@ -584,6 +594,29 @@ function togglePnlHunting() {
 	}
 }
 
+function toggleOrderHunting() {
+	isOrderHunting.value = !isOrderHunting.value;
+	const status = isOrderHunting.value ? 'Bật' : 'Tắt';
+	const type = isOrderHunting.value ? 'success' : 'info';
+	addToast(`Chế độ "Săn Lệnh" đã được ${status}.`, type);
+	addLog(`Chế độ "Săn Lệnh" đã được ${status}.`, type);
+
+	if (isOrderHunting.value) {
+		addLog(`Đang theo dõi tỷ lệ L/S. Sẽ tự động đặt lệnh khi L/S < 0.995.`, 'info');
+	}
+}
+
+// Watcher cho chế độ "Săn Lệnh"
+watch(orderRatio, (newRatio) => {
+	if (isOrderHunting.value && newRatio !== 'N/A' && newRatio < 0.995) {
+		addToast(`Tỷ lệ L/S đạt ${newRatio.toFixed(5)} (< 0.995). Tự động đặt lệnh!`, 'success');
+		addLog(`Tỷ lệ L/S đạt ${newRatio.toFixed(5)} (< 0.995). Tự động đặt lệnh!`, 'success');
+		isOrderHunting.value = false; // Tắt chế độ săn sau khi kích hoạt
+		placeOrders();
+	}
+});
+
+
 // --- LOGIC MỚI: THEO DÕI GIÁ TRỊ USDT DỰ KIẾN ---
 
 const createPricePoller = (orderRef, valueRef) => {
@@ -677,6 +710,7 @@ const saveState = () => {
 		successfulPositions: successfulPositions.value,
 		logs: logs.value,
 		isPnlHunting: isPnlHunting.value, // Lưu trạng thái săn PNL
+		isOrderHunting: isOrderHunting.value, // Lưu trạng thái săn lệnh
 		totalOrderValueForPnlHunt: totalOrderValueForPnlHunt, // Lưu tổng giá trị lệnh
 	};
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -694,6 +728,7 @@ const loadState = () => {
 			successfulPositions.value = state.successfulPositions || [];
 			logs.value = state.logs || [];
 			isPnlHunting.value = state.isPnlHunting || false; // Khôi phục trạng thái săn PNL
+			isOrderHunting.value = state.isOrderHunting || false; // Khôi phục trạng thái săn lệnh
 			totalOrderValueForPnlHunt = state.totalOrderValueForPnlHunt || 0; // Khôi phục tổng giá trị lệnh
 
 			if (isTrackingPnl.value && successfulPositions.value.length > 0) {
@@ -712,6 +747,10 @@ const loadState = () => {
 					addLog(`Mục tiêu PNL đã khôi phục: >= ${pnlHuntThreshold.toFixed(4)} USDT.`, 'info');
 				}
 
+				if (isOrderHunting.value) {
+					addLog('Chế độ "Săn Lệnh" đang hoạt động từ phiên trước.', 'info');
+				}
+
 				startPnlTracking(); // Bắt đầu theo dõi lại PNL
 			}
 		} catch (e) {
@@ -722,6 +761,6 @@ const loadState = () => {
 };
 
 // Theo dõi các thay đổi và lưu vào localStorage
-watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, logs, isPnlHunting], saveState, { deep: true });
+watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, logs, isPnlHunting, isOrderHunting], saveState, { deep: true });
 
 </script>
