@@ -44,6 +44,10 @@
 								<p class="text-xs text-slate-400">Tỷ lệ L/S</p>
 								<p class="text-sm font-mono font-bold text-yellow-300">{{ orderRatio }}</p>
 							</div>
+							<div v-if="orderRatioReverse !== 'N/A'" class="text-center">
+								<p class="text-xs text-slate-400">Tỷ lệ S/L</p>
+								<p class="text-sm font-mono font-bold text-yellow-300">{{ orderRatioReverse }}</p>
+							</div>
 						</div>
 
 						<!-- Short Panel -->
@@ -225,6 +229,14 @@ const getPnlClass = (pnl) => {
 const orderRatio = computed(() => {
 	if (shortOrderPrice.value > 0 && longOrderPrice.value > 0) {
 		const ratio = longOrderPrice.value / shortOrderPrice.value;
+		return ratio.toFixed(5);
+	}
+	return 'N/A';
+});
+
+const orderRatioReverse = computed(() => {
+	if (shortOrderPrice.value > 0 && longOrderPrice.value > 0) {
+		const ratio = shortOrderPrice.value / longOrderPrice.value;
 		return ratio.toFixed(5);
 	}
 	return 'N/A';
@@ -416,7 +428,7 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 		addToast(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES}...`, 'warning');
 		addLog(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES} sau 1 giây...`, 'warning');
-		await new Promise(resolve => setTimeout(resolve, 1000)); // Đợi 1 giây
+		await new Promise(resolve => setTimeout(resolve, 2000)); // Đợi 1 giây
 
 		try {
 			const retryPayload = {
