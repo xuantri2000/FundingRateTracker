@@ -608,7 +608,7 @@ function toggleOrderHunting() {
 
 // Watcher cho chế độ "Săn Lệnh"
 watch(orderRatio, (newRatio) => {
-	if (isOrderHunting.value && newRatio !== 'N/A' && newRatio < 0.995) {
+	if (isOrderHunting.value && newRatio !== 'N/A' && newRatio <= 0.995) {
 		addToast(`Tỷ lệ L/S đạt ${newRatio.toFixed(5)} (< 0.995). Tự động đặt lệnh!`, 'success');
 		addLog(`Tỷ lệ L/S đạt ${newRatio.toFixed(5)} (< 0.995). Tự động đặt lệnh!`, 'success');
 		isOrderHunting.value = false; // Tắt chế độ săn sau khi kích hoạt

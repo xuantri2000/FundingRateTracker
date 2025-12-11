@@ -16,6 +16,6 @@ export default {
   gateio: gateioHandler,
   htx: htxHandler,
   kucoin: kucoinHandler,
-  whitebit: whitebitHandler,
+  whitebit: whitebitHandler, //da xoa whitebit
 //   mexc: mexcHandler
 };
