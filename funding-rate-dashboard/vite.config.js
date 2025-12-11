@@ -53,8 +53,8 @@ export default defineConfig({
 		},
 	},
 	preview: {
-		host: '0.0.0.0',
-		port: 4173,
+		host: '127.0.0.1',
+		port: 9999,
 		allowedHosts: [
 			'nateriver.zapto.org',
 			'localhost',
