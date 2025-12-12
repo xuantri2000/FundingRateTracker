@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>400 - Bad Request</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body {
+        margin: 0;
+        padding: 20px;
+        font-family: "Segoe UI", sans-serif;
+        background: #fff7e6;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+    }
+    .card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 420px;
+        padding: 25px;
+        border-radius: 18px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        text-align: center;
+        animation: fade 0.4s ease-out;
+    }
+    .icon {
+        width: 80px;
+        margin-bottom: 15px;
+    }
+    h1 {
+        margin: 0;
+        font-size: 1.9em;
+        color: #d35400;
+        font-weight: 700;
+    }
+    p {
+        color: #555;
+        font-size: 1.05em;
+        line-height: 1.55;
+        margin-top: 10px;
+    }
+    .hint {
+        background: #fff0db;
+        border-left: 5px solid #ff9800;
+        padding: 14px;
+        margin-top: 20px;
+        border-radius: 10px;
+        text-align: left;
+        font-size: 0.95em;
+    }
+    @keyframes fade {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+</style>
+</head>
+<body>
+<div class="card">
+    <svg class="icon" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2L2 20h20L12 2z" stroke="#e67e22" stroke-width="2" fill="#fdebd0"/>
+        <circle cx="12" cy="15" r="1.5" fill="#d35400"/>
+        <rect x="11" y="8" width="2" height="5" fill="#d35400"/>
+    </svg>
+
+    <h1>Yêu cầu không hợp lệ</h1>
+    <p>Máy chủ không thể xác thực yêu cầu vì <strong>bạn chưa gửi chứng chỉ Client</strong> hoặc chứng chỉ không hợp lệ.</p>
+
+    <div class="hint">
+        ✔ Kiểm tra bạn đã cài đúng chứng chỉ.<br>
+        ✔ Trình duyệt/ứng dụng phải được cấu hình để gửi chứng chỉ khi kết nối HTTPS.
+    </div>
+</div>
+</body>
+</html>

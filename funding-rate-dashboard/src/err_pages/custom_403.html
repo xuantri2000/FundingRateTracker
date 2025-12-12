@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>403 - Forbidden</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body {
+        margin: 0;
+        padding: 20px;
+        font-family: "Segoe UI", sans-serif;
+        background: #ffe6e6;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+    }
+    .card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 420px;
+        padding: 25px;
+        border-radius: 18px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        text-align: center;
+        animation: fade 0.4s ease-out;
+    }
+    .icon {
+        width: 80px;
+        margin-bottom: 15px;
+    }
+    h1 {
+        margin: 0;
+        font-size: 1.9em;
+        color: #c62828;
+        font-weight: 700;
+    }
+    p {
+        color: #555;
+        font-size: 1.05em;
+        line-height: 1.55;
+        margin-top: 10px;
+    }
+    .hint {
+        background: #ffebee;
+        border-left: 5px solid #e53935;
+        padding: 14px;
+        margin-top: 20px;
+        border-radius: 10px;
+        text-align: left;
+        font-size: 0.95em;
+    }
+    @keyframes fade {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+</style>
+</head>
+<body>
+<div class="card">
+
+    <svg class="icon" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" stroke="#e53935" stroke-width="2" fill="#ffebee"/>
+        <line x1="8" y1="8" x2="16" y2="16" stroke="#c62828" stroke-width="2"/>
+        <line x1="16" y1="8" x2="8" y2="16" stroke="#c62828" stroke-width="2"/>
+    </svg>
+
+    <h1>Truy cập bị từ chối</h1>
+    <p>Hệ thống đã nhận chứng chỉ Client của bạn nhưng <strong>không thể xác thực</strong>.</p>
+    <p>Chứng chỉ có thể hết hạn, bị thu hồi hoặc không thuộc danh sách tin cậy.</p>
+
+    <div class="hint">
+        ✔ Kiểm tra hạn sử dụng chứng chỉ.<br>
+        ✔ Liên hệ quản trị hệ thống để cấp chứng chỉ mới nếu cần.<br>
+        ✔ Đảm bảo đúng CA và đúng chuỗi chứng thực.
+    </div>
+</div>
+</body>
+</html>

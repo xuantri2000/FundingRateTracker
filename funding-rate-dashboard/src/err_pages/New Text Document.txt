@@ -1,0 +1,23 @@
+Lệnh,Mô tả
+1.1. Tạo khóa riêng cho Root CA,
+openssl genrsa -aes256 -out myCA.key 4096,"Tạo khóa riêng (Key) 4096-bit, được bảo vệ bằng mật khẩu (Passphrase)."
+1.2. Tự ký Chứng chỉ Root CA,
+openssl req -x509 -new -nodes -key myCA.key -sha256 -days 3650 -out myCA.crt,"Tạo và tự ký chứng chỉ Root CA (.crt) từ khóa (.key) vừa tạo. Sẽ yêu cầu thông tin như Country Name, Common Name (đặt là ví dụ: My Root CA)."
+
+Lệnh,Mô tả
+2.1. Tạo Khóa riêng Server,
+openssl genrsa -out server.key 2048,Tạo khóa riêng cho Nginx.
+2.2. Tạo Yêu cầu Ký Chứng chỉ (CSR),
+openssl req -new -key server.key -out server.csr,Tạo yêu cầu ký. Quan trọng: Phần Common Name (CN) phải là tên miền của bạn: nateriver.zapto.org.
+2.3. Ký CSR bằng Root CA,
+openssl x509 -req -in server.csr -CA myCA.crt -CAkey myCA.key -CAcreateserial -out server.crt -days 365 -sha256,Ký yêu cầu server.csr bằng khóa và chứng chỉ Root CA (myCA.key và myCA.crt). Bạn sẽ cần nhập mật khẩu của Root CA.
+
+Lệnh,Mô tả
+3.1. Tạo Khóa riêng Client,
+openssl genrsa -out client.key 2048,Tạo khóa riêng cho Client.
+3.2. Tạo Yêu cầu Ký Chứng chỉ (CSR),
+openssl req -new -key client.key -out client.csr,"Tạo yêu cầu ký. Quan trọng: Phần Common Name (CN) phải là một tên duy nhất để bạn dễ nhận diện, ví dụ: Mobile_User_A."
+3.3. Ký CSR bằng Root CA,
+openssl x509 -req -in client.csr -CA myCA.crt -CAkey myCA.key -CAcreateserial -out client.crt -days 365 -sha256,Ký yêu cầu client.csr bằng Root CA.
+3.4. Đóng gói thành PKCS#12 (.p12),
+openssl pkcs12 -export -out client.p12 -inkey client.key -in client.crt -certfile myCA.crt,Tạo file client.p12. Bạn sẽ được yêu cầu nhập mật khẩu bảo vệ. Hãy ghi nhớ mật khẩu này để cài đặt trên điện thoại.
