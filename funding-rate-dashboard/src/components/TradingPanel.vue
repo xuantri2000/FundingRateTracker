@@ -16,6 +16,7 @@ const local = ref({
   exchange: props.modelValue?.exchange || '',
   leverage: props.modelValue?.leverage || 20,
   amount: props.modelValue?.amount || 100,
+  price: props.modelValue?.price || null,
   side: props.side || '',
 })
 
@@ -79,10 +80,50 @@ watch(() => props.modelValue, (newVal) => {
       </div>
     </div>
 
+    <!-- Giá đặt (Limit) -->
+    <div>
+      <div class="flex justify-between items-baseline mb-1">
+        <label class="text-slate-400 text-sm">Giá đặt (Limit)</label>
+        <div v-if="local.price && currentPrice > 0" class="text-xs text-slate-400">
+          Tỷ lệ: <span class="text-sm font-mono font-bold text-yellow-300">{{ (local.price / currentPrice).toFixed(5) }}</span>
+        </div>
+      </div>
+      <input
+        v-model.number="local.price"
+        type="number"
+        step="any"
+        placeholder="Để trống = Market"
+        class="w-full bg-slate-700 text-white rounded-lg p-2 border border-slate-600 placeholder-slate-500 no-spinner"
+      />
+      <div class="flex gap-2 mt-2" v-if="currentPrice > 0">
+        <button
+          @click="local.price = Number((currentPrice * 0.9975).toFixed(5))"
+          class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
+          title="Đặt giá thấp hơn 0.25%"
+        >
+          -0.25%
+        </button>
+        <button
+          @click="local.price = Number(currentPrice.toFixed(5))"
+          class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
+          title="Đặt bằng giá hiện tại"
+        >
+          Gốc
+        </button>
+        <button
+          @click="local.price = Number((currentPrice * 1.0025).toFixed(5))"
+          class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
+          title="Đặt giá cao hơn 0.25%"
+        >
+          +0.25%
+        </button>
+      </div>
+    </div>
+
     <!-- Số tiền -->
     <div>
       <div class="flex justify-between items-baseline mb-1">
-        <label class="text-slate-400 text-sm">Số lượng (2 chữ số thập phân)</label>
+        <label class="text-slate-400 text-sm">Số lượng</label>
         <div v-if="estimatedValue > 0" class="text-sm text-slate-400">
           ≈ {{ estimatedValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4 }) }}
         </div>

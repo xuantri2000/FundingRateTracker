@@ -44,9 +44,9 @@
 								<p class="text-xs text-slate-400">Tỷ lệ L/S</p>
 								<p class="text-sm font-mono font-bold text-yellow-300">{{ orderRatio }}</p>
 							</div>
-							<div v-if="orderRatioReverse !== 'N/A'" class="text-center">
-								<p class="text-xs text-slate-400">Tỷ lệ S/L</p>
-								<p class="text-sm font-mono font-bold text-yellow-300">{{ orderRatioReverse }}</p>
+							<div v-if="entryPriceRatio !== 'N/A'" class="text-center">
+								<p class="text-xs text-slate-400">Entry L/S</p>
+								<p class="text-sm font-mono font-bold text-yellow-300">{{ entryPriceRatio }}</p>
 							</div>
 						</div>
 
@@ -59,19 +59,23 @@
 					</div>
 
 					<!-- Submit -->
-					<div class="flex justify-center gap-4">
+					<div class="grid grid-cols-2 gap-3 sm:flex sm:justify-center sm:gap-4">
 						<!-- Nút Săn Lệnh Mới -->
 						<button @click="toggleOrderHunting" :disabled="isLoading || isTrackingPnl"
-							class="px-6 py-3 rounded-xl shadow-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+							class="px-3 py-2 sm:px-6 sm:py-3 text-sm sm:text-base rounded-lg sm:rounded-xl shadow-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
 							:class="isOrderHunting ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/30' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/30'">
-							<span v-if="isOrderHunting">🎯 Đang săn lệnh (Dừng)</span>
+							<span v-if="isOrderHunting" class="hidden sm:inline">🎯 Đang săn lệnh (Dừng)</span>
+							<span v-else-if="isOrderHunting" class="sm:hidden">🎯 Dừng săn</span>
 							<span v-else>🔫 Săn lệnh</span>
 						</button>
 
 						<button @click="placeOrders" :disabled="isLoading || isTrackingPnl || isOrderHunting"
-							class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+							class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-6 sm:py-3 text-sm sm:text-base rounded-lg sm:rounded-xl shadow-lg shadow-blue-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
 							<span v-if="isLoading">Đang xử lý...</span>
-							<span v-else>🚀 Đặt lệnh đồng thời</span>
+							<template v-else>
+								<span class="hidden sm:inline">🚀 Đặt lệnh đồng thời</span>
+								<span class="sm:hidden">🚀 Đặt lệnh</span>
+							</template>
 						</button>
 
 					</div>
@@ -245,10 +249,11 @@ const orderRatio = computed(() => {
 	return 'N/A';
 });
 
-const orderRatioReverse = computed(() => {
-	if (shortOrderPrice.value > 0 && longOrderPrice.value > 0) {
-		const ratio = shortOrderPrice.value / longOrderPrice.value;
-		return ratio.toFixed(5);
+const entryPriceRatio = computed(() => {
+	const lPrice = longOrder.value?.price;
+	const sPrice = shortOrder.value?.price;
+	if (lPrice > 0 && sPrice > 0) {
+		return (lPrice / sPrice).toFixed(5);
 	}
 	return 'N/A';
 });
