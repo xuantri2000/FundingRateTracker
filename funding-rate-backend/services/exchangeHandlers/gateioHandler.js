@@ -171,15 +171,25 @@ export const gateioHandler = {
 		);
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async getAllOpenOrders(symbol) {
+		const contract = formatSymbol(symbol);
+		// GET với query params
+		return _signedRequest(
+			`/futures/${SETTLE_CURRENCY}/orders`,
+			'GET',
+			{ contract, status: 'open' } // query params
+		);
+	},
+
+	async placeOrder(symbol, side, quantity, leverage, price) {
 		const contract = formatSymbol(symbol);
 		
 		// ✅ ĐÚNG: POST order phải gửi qua BODY
 		const bodyParams = {
 			contract,
 			size: side === 'BUY' ? Math.round(quantity) : -Math.round(quantity),
-			tif: 'ioc',
-			price: 0, // Market order không cần price
+			tif: 'gtc', // GTC for Limit
+			price: price.toString(),
 		};
 		
 		try {

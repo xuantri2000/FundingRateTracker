@@ -170,15 +170,30 @@ export const mexcHandler = {
 		return _signedRequest('/api/v1/private/position/change_leverage', 'POST', payload);
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async getAllOpenOrders(symbol) {
 		const contract = formatSymbol(symbol);
+		const data = await _signedRequest('/api/v1/private/order/list/open_orders', 'GET', {
+			symbol: contract
+		});
+		// The result is in data.data
+		return data.data || [];
+	},
+
+	async placeOrder(symbol, side, quantity, leverage, price) {
+		const contract = formatSymbol(symbol);
+        
+        // side: 1: Open Long, 3: Open Short
+        const orderSide = side === 'BUY' ? 1 : 3;
+        
 		const payload = {
 			symbol: contract,
 			vol: quantity,
-			side: side === 'BUY' ? 1 : 3, // 1: Open Long, 3: Open Short
-			type: 5, // Market order
+			price: price, // Thêm giá cho lệnh Limit
+			side: orderSide,
+			type: 1, // 1-Limit
 			openType: 1, // Isolated
 		};
+        
 		console.log(payload);
 
 		const data = await _signedRequest('/api/v1/private/order/create', 'POST', payload);

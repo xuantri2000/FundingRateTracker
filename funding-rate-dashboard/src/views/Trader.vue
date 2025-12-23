@@ -17,7 +17,7 @@
 						<label class="block text-slate-400 text-sm mb-2">Cặp giao dịch</label>
 						<input v-model="symbol" placeholder="BTCUSDT"
 							class="w-full bg-slate-700 text-white rounded-lg p-2 border border-slate-600 placeholder-slate-500"
-							:disabled="isTrackingPnl" />
+							:disabled="isTrackingPnl || isWaitingForFills" />
 					</div>
 
 					<!-- Dual Panel -->
@@ -26,12 +26,12 @@
 						<div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
 							<h2 class="text-xl text-green-400 font-semibold mb-4">Lệnh Long (BUY)</h2>
 							<TradingPanel v-model="longOrder" side="LONG" :exchanges="exchanges"
-								:disabled="isTrackingPnl" :estimated-value="longOrderValue" :current-price="longOrderPrice" />
+								:disabled="isTrackingPnl || isWaitingForFills" :estimated-value="longOrderValue" :current-price="longOrderPrice" />
 						</div>
 
 						<!-- Nút hoán đổi -->
 						<div class="flex justify-center md:flex-col gap-2 items-center">
-							<button @click="swapOrders" :disabled="isTrackingPnl"
+							<button @click="swapOrders" :disabled="isTrackingPnl || isWaitingForFills"
 								class="p-3 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
 								title="Đảo ngược lệnh Long và Short">
 								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
@@ -54,14 +54,14 @@
 						<div class="bg-slate-800 rounded-xl p-5 shadow-md border border-slate-700">
 							<h2 class="text-xl text-red-400 font-semibold mb-4">Lệnh Short (SELL)</h2>
 							<TradingPanel v-model="shortOrder" side="SHORT" :exchanges="exchanges"
-								:disabled="isTrackingPnl" :estimated-value="shortOrderValue" :current-price="shortOrderPrice" />
+								:disabled="isTrackingPnl || isWaitingForFills" :estimated-value="shortOrderValue" :current-price="shortOrderPrice" />
 						</div>
 					</div>
 
 					<!-- Submit -->
 					<div class="grid grid-cols-2 gap-3 sm:flex sm:justify-center sm:gap-4">
 						<!-- Nút Săn Lệnh Mới -->
-						<button @click="toggleOrderHunting" :disabled="isLoading || isTrackingPnl"
+						<button @click="toggleOrderHunting" :disabled="isLoading || isTrackingPnl || isWaitingForFills"
 							class="px-3 py-2 sm:px-6 sm:py-3 text-sm sm:text-base rounded-lg sm:rounded-xl shadow-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
 							:class="isOrderHunting ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/30' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/30'">
 							<span v-if="isOrderHunting" class="hidden sm:inline">🎯 Đang săn lệnh (Dừng)</span>
@@ -69,7 +69,7 @@
 							<span v-else>🔫 Săn lệnh</span>
 						</button>
 
-						<button @click="placeOrders" :disabled="isLoading || isTrackingPnl || isOrderHunting"
+						<button @click="placeOrders" :disabled="isLoading || isTrackingPnl || isOrderHunting || isWaitingForFills"
 							class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 sm:px-6 sm:py-3 text-sm sm:text-base rounded-lg sm:rounded-xl shadow-lg shadow-blue-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
 							<span v-if="isLoading">Đang xử lý...</span>
 							<template v-else>
@@ -84,6 +84,47 @@
 				<!-- Cột phải: Nhật ký hoạt động -->
 				<div class="lg:col-span-1">
 					<LogTable :logs="logs" @clear-logs="logs = []" />
+				</div>
+			</div>
+
+			<!-- Giao diện chờ khớp lệnh (chỉ hiển thị khi isWaitingForFills là true) -->
+			<div v-if="isWaitingForFills" class="space-y-6">
+				<div class="bg-slate-800/50 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-slate-700">
+					<h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-3">
+						<svg class="w-6 h-6 animate-spin text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+						Đang chờ khớp lệnh cho <span class="text-yellow-400">{{ symbol }}</span>
+					</h2>
+					<p class="text-slate-400 mb-4">Hệ thống đang kiểm tra trạng thái các lệnh Limit đã đặt. Giao diện sẽ tự động chuyển sang theo dõi PNL khi cả hai lệnh được khớp.</p>
+					<div class="overflow-x-auto">
+						<table class="w-full text-left">
+							<thead>
+								<tr class="border-b border-slate-600">
+									<th class="p-3 text-slate-400">Sàn</th>
+									<th class="p-3 text-slate-400">Lệnh</th>
+									<th class="p-3 text-slate-400 text-right">Giá đặt</th>
+									<th class="p-3 text-slate-400 text-right">Số lượng</th>
+									<th class="p-3 text-slate-400 text-center">Trạng thái</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr v-for="order in pendingOrders" :key="order.exchange" class="border-b border-slate-700">
+									<td class="p-3 font-medium text-white">{{ exchangeNameMap[order.exchange] || order.exchange }}</td>
+									<td class="p-3"><span :class="order.side === 'BUY' ? 'text-green-400' : 'text-red-400'">{{ order.side }}</span></td>
+									<td class="p-3 text-right font-mono text-slate-300">{{ order.price }}</td>
+									<td class="p-3 text-right font-mono text-slate-300">{{ order.quantity }}</td>
+									<td class="p-3 text-center font-semibold" :class="getPendingStatusClass(order.status)">
+										{{ getPendingStatusText(order.status) }}
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="flex justify-center gap-4 mt-6">
+						<button @click="() => forceClosePositions(pendingOrders)" :disabled="isLoading" class="bg-red-800 hover:bg-red-900 text-white px-6 py-3 rounded-xl shadow-lg shadow-red-500/30 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"><span v-if="isLoading">Đang xử lý...</span><span v-else>🚨 Hủy tất cả lệnh chờ</span></button>
+					</div>
 				</div>
 			</div>
 
@@ -195,12 +236,15 @@ const addLog = (message, type = 'info') => {
 }
 
 // --- PNL Tracking State ---
-const isTrackingPnl = ref(false)
-const pnlData = ref([])
-const successfulPositions = ref([])
+const isTrackingPnl = ref(false);
+const isWaitingForFills = ref(false); // BIẾN MỚI: Trạng thái chờ khớp lệnh
+const pnlData = ref([]);
+const successfulPositions = ref([]);
+const pendingOrders = ref([]); // BIẾN MỚI: Các lệnh đã đặt và đang chờ khớp
 const isPnlHunting = ref(false); // BIẾN MỚI: Trạng thái săn PNL
 let lastPnlDataBeforeUpdate = []; // BIẾN MỚI: Lưu trữ PNL của lần fetch trước
 let totalOrderValueForPnlHunt = 0; // BIẾN MỚI: Lưu tổng giá trị lệnh để tính ngưỡng PNL
+let orderFillInterval = null; // BIẾN MỚI: Interval để poll trạng thái khớp lệnh
 let pnlInterval = null;
 
 // --- State mới cho giá trị USDT dự kiến ---
@@ -271,6 +315,24 @@ const shortOrderPrice = computed(() => {
 	}
 	return 0;
 });
+
+const getPendingStatusText = (status) => {
+	switch (status) {
+		case 'filled': return 'Đã khớp';
+		case 'failed': return 'Thất bại';
+		case 'pending':
+		default: return 'Đang chờ...';
+	}
+};
+
+const getPendingStatusClass = (status) => {
+	switch (status) {
+		case 'filled': return 'text-green-400';
+		case 'failed': return 'text-red-400';
+		case 'pending':
+		default: return 'text-blue-400';
+	}
+};
 
 const startPnlTracking = () => {
 	if (pnlInterval) clearInterval(pnlInterval)
@@ -367,6 +429,129 @@ const startPnlTracking = () => {
 	pnlInterval = setInterval(fetchPnl, intervalTime)
 }
 
+const startOrderFillTracking = () => {
+	if (orderFillInterval) clearInterval(orderFillInterval);
+
+	// Tạm dừng theo dõi giá trị ước tính trong khi chờ khớp lệnh
+	longPoller.stopPolling();
+	shortPoller.stopPolling();
+	addLog('Tạm dừng theo dõi giá trị ước tính trong khi chờ khớp lệnh.', 'info');
+
+	const checkFills = async () => {
+		// Lấy các lệnh chưa được xác nhận đã khớp
+		const unconfirmedOrders = pendingOrders.value.filter(o => o.status !== 'filled');
+
+		if (unconfirmedOrders.length === 0) {
+			clearInterval(orderFillInterval);
+			// Trường hợp này thường được xử lý bên dưới, nhưng đây là một biện pháp bảo vệ
+			if (isWaitingForFills.value) {
+				addToast('Tất cả lệnh đã được khớp!', 'success');
+				addLog('Tất cả lệnh đã được khớp! Bắt đầu theo dõi PNL.', 'success');
+				isWaitingForFills.value = false;
+				successfulPositions.value = [...pendingOrders.value];
+				pendingOrders.value = [];
+				totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
+				addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
+				isTrackingPnl.value = true;
+				startPnlTracking();
+			}
+			return;
+		}
+
+		addLog(`Đang kiểm tra ${unconfirmedOrders.length} lệnh chờ khớp...`, 'info');
+
+		try {
+			const exchangesToCheck = [...new Set(unconfirmedOrders.map(o => o.exchange))];
+			const positionsToCheck = unconfirmedOrders.map(o => ({ exchange: o.exchange, side: o.side }));
+
+			// Gọi API song song để kiểm tra lệnh mở và PNL
+			const [openOrdersResponse, pnlResponse] = await Promise.all([
+				axios.post('/api/order/open-orders', { symbol: symbol.value, exchanges: exchangesToCheck }),
+				axios.post('/api/order/pnl', { symbol: symbol.value, positions: positionsToCheck })
+			]);
+
+			const openOrdersResults = openOrdersResponse.data.results.reduce((acc, r) => {
+				if (r.success) acc[r.data.exchange] = r.data.orders;
+				return acc;
+			}, {});
+
+			const pnlResults = pnlResponse.data.results.reduce((acc, r) => {
+				if (r.success) acc[r.data.exchange] = r.data;
+				return acc;
+			}, {});
+
+			let hasFailedOrder = false;
+
+			// Cập nhật trạng thái cho từng lệnh đang chờ
+			pendingOrders.value.forEach(order => {
+				if (order.status === 'filled') return;
+
+				const pnlInfo = pnlResults[order.exchange];
+				const openOrders = openOrdersResults[order.exchange];
+
+				// Điều kiện 1: Đã khớp (có vị thế)
+				if (pnlInfo && pnlInfo.size !== 0) {
+					if (order.status !== 'filled') {
+						order.status = 'filled';
+						addLog(`[${exchangeNameMap.value[order.exchange]}] Lệnh ${order.side} đã khớp.`, 'success');
+					}
+				}
+				// Điều kiện 2: Vẫn đang chờ (lệnh vẫn còn trong danh sách mở)
+				else if (openOrders && openOrders.length > 0) {
+					// Trạng thái vẫn là 'pending', không làm gì
+				}
+				// Điều kiện 3: Thất bại (không có trong danh sách mở VÀ không có vị thế)
+				else {
+					order.status = 'failed';
+					hasFailedOrder = true;
+					addLog(`[${exchangeNameMap.value[order.exchange]}] Lệnh ${order.side} đã thất bại (không khớp và không có trong danh sách chờ).`, 'error');
+				}
+			});
+
+			const filledCount = pendingOrders.value.filter(o => o.status === 'filled').length;
+
+			if (hasFailedOrder) {
+				clearInterval(orderFillInterval);
+				addToast('Một hoặc nhiều lệnh không thể khớp. Hủy các lệnh đã khớp (nếu có).', 'error');
+				const filledOrdersToCancel = pendingOrders.value.filter(o => o.status === 'filled');
+				if (filledOrdersToCancel.length > 0) {
+					await forceClosePositions(filledOrdersToCancel, false);
+				}
+				reset();
+				return;
+			}
+
+			if (filledCount === pendingOrders.value.length) {
+				addToast('Tất cả lệnh đã được khớp!', 'success');
+				addLog('Tất cả lệnh đã được khớp! Bắt đầu theo dõi PNL.', 'success');
+
+				clearInterval(orderFillInterval);
+				isWaitingForFills.value = false;
+				successfulPositions.value = [...pendingOrders.value];
+
+				// KHỞI TẠO pnlData để UI hiển thị ngay lập tức với trạng thái "Đang tải..."
+				pnlData.value = successfulPositions.value.map(pos => ({
+					...pos,
+					pnl: null,
+					isLiquidated: false,
+				}));
+
+				pendingOrders.value = [];
+				totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
+				addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
+				isTrackingPnl.value = true;
+				startPnlTracking();
+				return;
+			}
+		} catch (error) {
+			addLog('Lỗi khi kiểm tra trạng thái khớp lệnh.', 'error');
+			console.error('Lỗi checkFills:', error);
+		}
+	};
+	checkFills(); // Kiểm tra ngay lập tức
+	orderFillInterval = setInterval(checkFills, 5000); // Kiểm tra mỗi 5 giây
+};
+
 async function placeOrders() {
 	if (!symbol.value || !longOrder.value || !shortOrder.value) {
 		addToast('Vui lòng nhập đủ thông tin cho cả hai lệnh!', 'warning')
@@ -374,12 +559,10 @@ async function placeOrders() {
 		return
 	}
 
-	// Dừng polling giá khi bắt đầu quá trình đặt lệnh
 	addLog('Tạm dừng theo dõi giá trị ước tính để đặt lệnh.', 'info');
 	longPoller.stopPolling();
 	shortPoller.stopPolling();
 
-	isLoading.value = true
 	try {
 		const payload = {
 			symbol: symbol.value,
@@ -389,56 +572,37 @@ async function placeOrders() {
 			],
 		}
 
+		isLoading.value = true
 		const { data } = await axios.post('/api/order/multi', payload)
 		const results = data.results || []
 
-		// Khởi tạo pnlData với các vị thế thành công
-		pnlData.value = results
-			.filter(r => r.success)
-			.map(r => ({ exchange: r.exchange, side: r.side, pnl: 0, isLiquidated: false }));
+		const successfullyPlaced = results.filter(r => r.success).map(r => ({ exchange: r.exchange, side: r.side, orderId: r.data.orderId, price: r.data.price, quantity: r.data.quantity }));
+		const failedOrders = payload.orders.filter(o => !successfullyPlaced.some(s => s.exchange === o.exchange));
 
+		successfullyPlaced.forEach(r => {
+			const successMsg = `[${r.exchange}] Lệnh Limit ${r.side} đã được đặt thành công!`;
+			addToast(successMsg, 'success');
+			addLog(successMsg, 'success');
+		});
+		failedOrders.forEach(o => {
+			const errorResult = results.find(r => r.exchange === o.exchange);
+			const errorMsg = errorResult ? errorResult.error : 'Unknown error';
+			addToast(`[${o.exchange}] Lệnh ${o.side} thất bại: ${errorMsg}`, 'error');
+			addLog(`[${o.exchange}] Lệnh ${o.side} thất bại: ${errorMsg}`, 'error');
+		});
 
-		// Dọn dẹp mảng vị thế thành công trước khi xử lý kết quả mới
-		successfulPositions.value = [];
-
-		let successCount = 0;
-		results.forEach(r => {
-			if (r.success) {
-				successCount++;
-				const successMsg = `[${r.exchange}] Lệnh ${r.side} đã được đặt thành công!`;
-				addToast(successMsg, 'success');
-				addLog(successMsg, 'success')
-				// Lưu lại thông tin cần thiết để đóng lệnh và lấy PNL
-				successfulPositions.value.push({
-					exchange: r.exchange,
-					side: r.side,
-					quantity: r.data.quantity,
-				})
-			} else {
-				addToast(`[${r.exchange}] Lệnh ${r.side} thất bại: ${r.error}`, 'error')
-				addLog(`[${r.exchange}] Lệnh ${r.side} thất bại: ${r.error}`, 'error')
-			}
-		})
-
-		if (successCount === 2) {
-			// Lưu lại tổng giá trị lệnh tại thời điểm đặt lệnh thành công
-			totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
-			addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
-
-			isTrackingPnl.value = true
-			startPnlTracking()
-		} else if (successCount === 1) {
-			const failedOrderInfo = payload.orders.find(o => !results.some(r => r.success && r.exchange === o.exchange));
-			await handlePartialOrderFailure(failedOrderInfo);
+		if (successfullyPlaced.length === 2) {
+			pendingOrders.value = successfullyPlaced.map(o => ({ ...o, status: 'pending' }));
+			isWaitingForFills.value = true;
+			startOrderFillTracking();
+		} else if (successfullyPlaced.length === 1) {
+			await handlePartialOrderFailure(failedOrders[0], successfullyPlaced[0]);
 		} else {
-			// Nếu không thành công cả 2, reset lại
-			successfulPositions.value = [];
-			reset(); // Khởi động lại polling nếu cả 2 lệnh thất bại
+			reset();
 		}
 
 	} catch (err) {
 		console.error('❌ Lỗi đặt lệnh:', err)
-		// Nếu có lỗi, reset để khởi động lại polling
 		reset();
 		addToast(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
 		addLog(err.response?.data?.message || 'Đặt lệnh thất bại!', 'error')
@@ -447,7 +611,7 @@ async function placeOrders() {
 	}
 }
 
-async function handlePartialOrderFailure(failedOrderInfo) {
+async function handlePartialOrderFailure(failedOrderInfo, successfulOrderInfo) {
 	const MAX_RETRIES = 2;
 	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 		addToast(`Lệnh [${failedOrderInfo.exchange}] thất bại. Thử lại lần ${attempt}/${MAX_RETRIES}...`, 'warning');
@@ -466,17 +630,13 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 				const successMsg = `[${retryResult.exchange}] Đặt lại lệnh ${retryResult.side} thành công!`;
 				addToast(successMsg, 'success');
 				addLog(successMsg, 'success');
-				successfulPositions.value.push({
-					exchange: retryResult.exchange,
-					side: retryResult.side,
-					quantity: retryResult.data.quantity,
-				});
-				// Lưu lại tổng giá trị lệnh tại thời điểm đặt lệnh thành công
-				totalOrderValueForPnlHunt = longOrderValue.value + shortOrderValue.value;
-				addLog(`Tổng giá trị 2 lệnh: ${totalOrderValueForPnlHunt.toFixed(2)} USDT.`, 'info');
 
-				isTrackingPnl.value = true;
-				startPnlTracking(); // Bắt đầu polling nhanh
+				pendingOrders.value = [
+					{ ...successfulOrderInfo, status: 'pending' },
+					{ exchange: retryResult.exchange, side: retryResult.side, orderId: retryResult.data.orderId, price: retryResult.data.price, quantity: retryResult.data.quantity, status: 'pending' }
+				];
+				isWaitingForFills.value = true;
+				startOrderFillTracking();
 				return; // Thoát khỏi hàm nếu thành công
 			}
 			// Nếu thất bại, vòng lặp sẽ tiếp tục cho lần thử tiếp theo
@@ -489,16 +649,15 @@ async function handlePartialOrderFailure(failedOrderInfo) {
 	// Nếu tất cả các lần thử lại đều thất bại
 	addToast(`Đặt lại lệnh thất bại. Hủy lệnh đã thành công...`, 'error');
 	addLog(`[${failedOrderInfo.exchange}] Đặt lại lệnh thất bại sau ${MAX_RETRIES} lần. Hủy lệnh đã thành công...`, 'error');
-	const successfulOrder = successfulPositions.value[0];
-	if (successfulOrder) {
-		await forceClosePositions([successfulOrder], false);
-		addLog(`Đã hủy lệnh trên sàn [${exchangeNameMap.value[successfulOrder.exchange] || successfulOrder.exchange}].`, 'info');
+	if (successfulOrderInfo) {
+		await forceClosePositions([successfulOrderInfo], false);
+		addLog(`Đã hủy lệnh trên sàn [${exchangeNameMap.value[successfulOrderInfo.exchange] || successfulOrderInfo.exchange}].`, 'info');
 	}
 	reset();
 }
 
 function swapOrders() {
-	if (isTrackingPnl.value) return;
+	if (isTrackingPnl.value || isWaitingForFills.value) return;
 
 	// Hoán đổi giá trị của hai order
 	const temp = longOrder.value;
@@ -573,10 +732,13 @@ async function forceClosePositions(positionsToClose = null, shouldReset = true) 
 
 function reset(shouldRestartPolling = true) {
 	isTrackingPnl.value = false
+	isWaitingForFills.value = false;
 	if (pnlInterval) clearInterval(pnlInterval)
+	if (orderFillInterval) clearInterval(orderFillInterval);
 	pnlData.value = []
 	successfulPositions.value = []
 	isPnlHunting.value = false; // Reset chế độ săn PNL
+	pendingOrders.value = [];
 	localStorage.removeItem(STORAGE_KEY); // Xóa state khi reset
 
 	if (shouldRestartPolling) {
@@ -630,6 +792,12 @@ const createPricePoller = (orderRef, valueRef) => {
 
 	const fetchPrice = async () => {
 		if (isFetching) return;
+
+		// Thêm điều kiện kiểm tra: Không fetch giá khi đang chờ khớp lệnh hoặc đang theo dõi PNL
+		if (isWaitingForFills.value || isTrackingPnl.value) {
+			stopPolling();
+			return;
+		}
 
 		const newOrder = orderRef.value;
 		const newSymbol = symbol.value;
@@ -700,6 +868,7 @@ const shortPoller = createPricePoller(shortOrder, shortOrderValue);
 // Cập nhật onUnmounted để dừng polling
 onUnmounted(() => {
 	if (pnlInterval) clearInterval(pnlInterval);
+	if (orderFillInterval) clearInterval(orderFillInterval);
 	longPoller.stopPolling();
 	shortPoller.stopPolling();
 });
@@ -712,6 +881,8 @@ const saveState = () => {
 		longOrder: longOrder.value,
 		shortOrder: shortOrder.value,
 		isTrackingPnl: isTrackingPnl.value,
+		isWaitingForFills: isWaitingForFills.value,
+		pendingOrders: pendingOrders.value,
 		successfulPositions: successfulPositions.value,
 		logs: logs.value,
 		isPnlHunting: isPnlHunting.value, // Lưu trạng thái săn PNL
@@ -729,12 +900,20 @@ const loadState = () => {
 			symbol.value = state.symbol || 'BTCUSDT';
 			longOrder.value = state.longOrder || null;
 			shortOrder.value = state.shortOrder || null;
+			logs.value = state.logs || [];
+			totalOrderValueForPnlHunt = state.totalOrderValueForPnlHunt || 0;
+
+			isWaitingForFills.value = state.isWaitingForFills || false;
+			pendingOrders.value = state.pendingOrders || [];
 			isTrackingPnl.value = state.isTrackingPnl || false;
 			successfulPositions.value = state.successfulPositions || [];
-			logs.value = state.logs || [];
-			isPnlHunting.value = state.isPnlHunting || false; // Khôi phục trạng thái săn PNL
-			isOrderHunting.value = state.isOrderHunting || false; // Khôi phục trạng thái săn lệnh
-			totalOrderValueForPnlHunt = state.totalOrderValueForPnlHunt || 0; // Khôi phục tổng giá trị lệnh
+			isPnlHunting.value = state.isPnlHunting || false;
+			isOrderHunting.value = state.isOrderHunting || false;
+
+			if (isWaitingForFills.value && pendingOrders.value.length > 0) {
+				addLog('Đã khôi phục trạng thái chờ khớp lệnh.', 'info');
+				startOrderFillTracking();
+			}
 
 			if (isTrackingPnl.value && successfulPositions.value.length > 0) {
 				addLog('Đã khôi phục phiên giao dịch trước đó.', 'info');
@@ -766,6 +945,6 @@ const loadState = () => {
 };
 
 // Theo dõi các thay đổi và lưu vào localStorage
-watch([symbol, longOrder, shortOrder, isTrackingPnl, successfulPositions, logs, isPnlHunting, isOrderHunting], saveState, { deep: true });
+watch([symbol, longOrder, shortOrder, isTrackingPnl, isWaitingForFills, pendingOrders, successfulPositions, logs, isPnlHunting, isOrderHunting], saveState, { deep: true });
 
 </script>

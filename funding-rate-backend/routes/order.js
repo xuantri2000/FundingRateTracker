@@ -185,6 +185,58 @@ router.post('/force-close', async (req, res) => {
 	}
 });
 
+// POST /api/order/open-orders - Lấy tất cả lệnh đang mở cho các sàn
+router.post('/open-orders', async (req, res) => {
+	try {
+		const { symbol, exchanges: exchangeIds } = req.body;
+
+		if (!symbol || !exchangeIds || !Array.isArray(exchangeIds) || exchangeIds.length === 0) {
+			return res.status(400).json({
+				error: 'Invalid request',
+				message: 'Symbol and exchanges array are required'
+			});
+		}
+
+		const results = await Promise.allSettled(
+			exchangeIds.map(async (exchangeId) => {
+				const handler = exchangeHandlers[exchangeId];
+				if (!handler || !handler.getAllOpenOrders) {
+					throw new Error(`getAllOpenOrders not supported for ${exchangeId}`);
+				}
+				if (!hasCredentials(exchangeId)) {
+					throw new Error(`Missing credentials for ${exchangeId}`);
+				}
+				const openOrders = await handler.getAllOpenOrders(symbol);
+				return {
+					exchange: exchangeId,
+					orders: openOrders
+				};
+			})
+		);
+
+		const response = results.map((result, index) => {
+			if (result.status === 'fulfilled') {
+				return { success: true, data: result.value };
+			} else {
+				return {
+					success: false,
+					exchange: exchangeIds[index],
+					error: result.reason.message
+				};
+			}
+		});
+
+		res.json({ results: response });
+
+	} catch (error) {
+		console.error('❌ Error in open-orders check:', error);
+		res.status(500).json({
+			error: 'Internal server error',
+			message: error.message
+		});
+	}
+});
+
 // POST /api/order/close-hedged - Đóng các vị thế đã hedge
 router.post('/close-hedged', async (req, res) => {
 	try {
@@ -241,14 +293,18 @@ router.post('/close-hedged', async (req, res) => {
 
 // Xử lý từng order
 async function processOrder(symbol, order) {
-	const { exchange, side, leverage, amount } = order;
+	const { exchange, side, leverage, amount, price } = order; // <<< ĐÃ THÊM price
 
 	console.log(`------------------------ [${exchange.toUpperCase()}] ------------------------`);
-	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Quantity: ${amount}`);
+	console.log(`📊 [${exchange}] ${side} ${symbol} - Leverage: ${leverage}x, Quantity: ${amount}, Price: ${price}`);
 
 	// KIỂM TRA ĐẦU VÀO
 	if (typeof amount !== 'number' || amount <= 0 || typeof leverage !== 'number' || leverage <= 0) {
 		throw new Error('Số lượng (Amount) và Đòn bẩy (Leverage) phải là số và lớn hơn 0.');
+	}
+    // THÊM: Kiểm tra price nếu nó được cung cấp
+    if (!price || typeof price !== 'number' || price <= 0) {
+        throw new Error('Giá (Price) là bắt buộc và phải là số lớn hơn 0 cho lệnh Limit.');
 	}
 
 	// Kiểm tra exchange có handler không
@@ -347,11 +403,12 @@ async function processOrder(symbol, order) {
 	}
 
 	// 5. Place order
-	const result = await handler.placeOrder(symbol, side, quantity, leverage);
+	// TRUYỀN THÊM leverage VÀ price
+	const result = await handler.placeOrder(symbol, side, quantity, leverage, price); 
 	console.log(`   ✅ Order placed: ${result.orderId || 'OK'}`);
 
 	return {
-		price: null,
+		price: price, // <<< TRẢ VỀ price
 		quantity,
 		leverage,
 		orderId: result.orderId,

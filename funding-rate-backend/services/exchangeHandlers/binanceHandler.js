@@ -200,13 +200,22 @@ export const binanceHandler = {
 		return _signedRequest('/fapi/v1/marginType', 'POST', params);
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async getAllOpenOrders(symbol) {
+		const params = new URLSearchParams({ symbol });
+		// API v1/openOrders là GET
+		return _signedRequest('/fapi/v1/openOrders', 'GET', params);
+	},
+
+	async placeOrder(symbol, side, quantity, leverage, price) {
 		const params = new URLSearchParams({
 			symbol,
 			side,
-			type: 'MARKET',
+			type: 'LIMIT',
 			quantity: quantity.toString(),
+			price: price.toString(),
+			timeInForce: 'GTC', // Good Till Cancelled for Limit Order
 		});
+
 		// API v1/order là POST
 		try {
 			const data = await _signedRequest('/fapi/v1/order', 'POST', params);

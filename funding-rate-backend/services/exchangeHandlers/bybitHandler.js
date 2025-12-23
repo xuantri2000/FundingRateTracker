@@ -177,13 +177,21 @@ export const bybitHandler = {
     return _signedRequest('/v5/position/set-leverage', 'POST', payload);
   },
 
-  async placeOrder(symbol, side, quantity) {
+  async getAllOpenOrders(symbol) {
+    const queryString = `category=linear&symbol=${symbol}`;
+    const data = await _signedRequest('/v5/order/realtime', 'GET', queryString);
+    return data.result.list || [];
+  },
+
+  async placeOrder(symbol, side, quantity, leverage, price) {
     const payload = {
       category: 'linear',
       symbol,
       side: side === 'BUY' ? 'Buy' : 'Sell',
-      orderType: 'Market',
+      orderType: 'Limit',
       qty: quantity.toString(),
+      price: price.toString(),
+      timeInForce: 'GTC',
     };
     
     const data = await _signedRequest('/v5/order/create', 'POST', payload);

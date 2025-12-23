@@ -92,26 +92,26 @@ watch(() => props.modelValue, (newVal) => {
         v-model.number="local.price"
         type="number"
         step="any"
-        placeholder="Để trống = Market"
+        placeholder="Giá đặt lệnh (bắt buộc)"
         class="w-full bg-slate-700 text-white rounded-lg p-2 border border-slate-600 placeholder-slate-500 no-spinner"
       />
       <div class="flex gap-2 mt-2" v-if="currentPrice > 0">
         <button
-          @click="local.price = Number((currentPrice * 0.9975).toFixed(5))"
+          @click="local.price = Number((currentPrice * 0.9975).toFixed(3))"
           class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
           title="Đặt giá thấp hơn 0.25%"
         >
           -0.25%
         </button>
         <button
-          @click="local.price = Number(currentPrice.toFixed(5))"
+          @click="local.price = Number(currentPrice.toFixed(3))"
           class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
           title="Đặt bằng giá hiện tại"
         >
           Gốc
         </button>
         <button
-          @click="local.price = Number((currentPrice * 1.0025).toFixed(5))"
+          @click="local.price = Number((currentPrice * 1.0025).toFixed(3))"
           class="flex-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1 rounded transition-colors"
           title="Đặt giá cao hơn 0.25%"
         >

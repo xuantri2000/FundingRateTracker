@@ -241,20 +241,38 @@ export const whitebitHandler = {
     return { message: `Leverage set to ${leverage}x for collateral account` };
   },
 
-  // Cần API Key (Private)
-  async placeOrder(symbol, side, quantity) {
+  async getAllOpenOrders(symbol) {
     const tickerId = formatSymbolWB(symbol);
+    const endpoint = '/api/v4/orders';
+    const payload = {
+      market: tickerId,
+      request: endpoint,
+      nonce: Date.now()
+    };
+    // This returns a list of active orders for the given market
+    const data = await _signedRequest(endpoint, 'POST', payload);
+    return data || [];
+  },
+
+  // Cần API Key (Private)
+  async placeOrder(symbol, side, quantity, leverage, price) {
+    const tickerId = formatSymbolWB(symbol);
+    const endpoint = '/api/v4/order/collateral/limit';
+
     const payload = {
       market: tickerId,
       side: side.toLowerCase(), // 'buy' hoặc 'sell'
       amount: quantity.toString(),
-      request: '/api/v4/order/collateral/market',
+      price: price.toString(), // Thêm giá cho lệnh Limit
+      postOnly: false, // Mặc định cho WhiteBIT
+      request: endpoint,
       nonce: Date.now()
     };
-    console.log(`   🛒 [WhiteBIT] Placing MARKET ${side} order for ${quantity} ${tickerId}`);
+
+    console.log(`   🛒 [WhiteBIT] Placing LIMIT ${side} order for ${quantity} ${tickerId} at price ${price}`);
 	try{
-		// ✅ Endpoint đúng cho collateral/futures market order
-		const data = await _signedRequest('/api/v4/order/collateral/market', 'POST', payload);
+		// ✅ Endpoint đúng cho collateral/futures limit order
+		const data = await _signedRequest(endpoint, 'POST', payload);
 		// Trả về ID lệnh
 		return { orderId: data?.orderId || 'N/A' };
 	}catch(error){

@@ -176,16 +176,28 @@ export const kucoinHandler = {
 		return;
 	},
 
-	async placeOrder(symbol, side, quantity, leverage) {
+	async getAllOpenOrders(symbol) {
 		const contract = formatSymbol(symbol);
+		const data = await _signedRequest('/api/v1/orders', 'GET', {
+			symbol: contract,
+			status: 'active'
+		});
+		return data.data.items || [];
+	},
+
+	async placeOrder(symbol, side, quantity, leverage, price) {
+		const contract = formatSymbol(symbol);
+        
 		const payload = {
 			clientOid: `my-trader-${Date.now()}`,
 			symbol: contract,
-			leverage: leverage.toString(), // ✅ Gửi đòn bẩy trực tiếp trong lệnh
-			side: side.toLowerCase(), // 'buy' hoặc 'sell'
-			type: 'market',
+			leverage: leverage.toString(),
+			side: side.toLowerCase(),
+			type: 'limit',
 			size: Math.round(quantity),
-			marginMode: "ISOLATED"
+			marginMode: "ISOLATED",
+			price: price.toString(), // Thêm giá cho lệnh Limit
+			timeInForce: 'GTC',
 		};
 
 		const data = await _signedRequest('/api/v1/orders', 'POST', payload);

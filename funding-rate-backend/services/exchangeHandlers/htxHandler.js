@@ -214,7 +214,24 @@ export const htxHandler = {
 		});
 	},
 
-	async placeOrder(symbol, side, quantity, leverage = 1) {
+	async getAllOpenOrders(symbol) {
+		const contract = formatSymbol(symbol);
+		try {
+			const data = await _signedRequest('POST', '/linear-swap-api/v1/swap_openorders', {
+				contract_code: contract
+			});
+			// The actual orders are in the 'orders' property of the 'data' object
+			return data.orders || [];
+		} catch (error) {
+			// If there are no open orders, the API might throw an error.
+			if (error.message && error.message.includes('There are no open orders')) {
+				return [];
+			}
+			throw error;
+		}
+	},
+
+	async placeOrder(symbol, side, quantity, leverage = 1, price) {
 		const contract = formatSymbol(symbol);
 
 		const orderParams = {
@@ -222,8 +239,9 @@ export const htxHandler = {
 			volume: Math.round(quantity),
 			direction: side === 'BUY' ? 'buy' : 'sell',
 			offset: 'open',
-			lever_rate: leverage, // Default leverage, should be set before
-			order_price_type: 'opponent', // Market order
+			lever_rate: leverage,
+			order_price_type: 'limit',
+			price: price, // Thêm giá cho lệnh Limit
 		};
 
 		try {

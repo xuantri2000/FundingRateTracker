@@ -168,17 +168,24 @@ export const bitgetHandler = {
 		return _signedRequest('/api/v2/mix/account/set-leverage', 'POST', payload);
 	},
 
-	async placeOrder(symbol, side, quantity) {
+	async getAllOpenOrders(symbol) {
+		const payload = { productType: PRODUCT_TYPE, symbol };
+		const data = await _signedRequest('/api/v2/mix/order/open-orders', 'GET', payload);
+		return data.data || [];
+	},
+
+	async placeOrder(symbol, side, quantity, leverage, price) {
 		const payload = {
 			symbol,
 			productType: PRODUCT_TYPE,
 			marginCoin: 'USDT',
-			// ✅ Bitget dùng tradeSide và side để xác định hành động
 			tradeSide: 'open',
 			side: side === 'BUY' ? 'buy' : 'sell',
-			marginMode: 'isolated', // ✅ Bitget yêu cầu marginMode trong payload đặt lệnh
-			orderType: 'market',
+			marginMode: 'isolated',
+			orderType: 'limit',
 			size: quantity.toString(),
+			price: price.toString(),
+			timeInForce: 'gtc',
 		};
 
 		const data = await _signedRequest('/api/v2/mix/order/place-order', 'POST', payload);
