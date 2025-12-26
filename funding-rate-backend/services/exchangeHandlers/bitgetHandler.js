@@ -170,8 +170,8 @@ export const bitgetHandler = {
 
 	async getAllOpenOrders(symbol) {
 		const payload = { productType: PRODUCT_TYPE, symbol };
-		const data = await _signedRequest('/api/v2/mix/order/open-orders', 'GET', payload);
-		return data.data || [];
+		const data = await _signedRequest('/api/v2/mix/order/orders-pending', 'GET', payload);
+		return data.data.entrustedList || [];
 	},
 
 	async placeOrder(symbol, side, quantity, leverage, price) {
